@@ -69,20 +69,32 @@ export default function ImageViewer({
         {({ resetTransform, zoomIn }) => (
           <>
             <TransformComponent
-              wrapperClass="!w-full !h-full !flex !items-center !justify-center overflow-hidden"
-              contentClass="!flex !items-center !justify-center"
+              wrapperStyle={{
+                width: "100%",
+                height: "100%",
+              }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              wrapperClass="!w-full !h-full overflow-hidden"
+              contentClass="!w-full !h-full !flex !items-center !justify-center"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={src}
                 alt={alt}
                 referrerPolicy="no-referrer"
-                className="max-w-full max-h-[100dvh] w-auto h-auto object-contain pointer-events-auto select-none"
+                className="max-w-full max-h-[100dvh] w-auto h-auto object-contain pointer-events-auto select-none m-auto"
                 style={{
                   maxHeight: "100dvh",
                   maxWidth: "100vw",
                   objectFit: "contain",
                   aspectRatio: "auto",
+                  margin: "auto",
                 }}
                 loading="eager"
               />
