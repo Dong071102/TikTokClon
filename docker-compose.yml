@@ -3,7 +3,7 @@ version: "3.8"
 services:
   tiktok-app:
     build:
-      context: .
+      context: https://github.com/Dong071102/TikTokClon.git#main
       dockerfile: Dockerfile
     container_name: tiktok-app
     restart: unless-stopped
