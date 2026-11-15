@@ -40,6 +40,19 @@ export default function VideoPlayer({
   const [rotation, setRotation] = useState<number>(defaultRotate);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Chế độ thu phóng khi xoay: "fill" (phóng to theo chiều lớn nhất của màn hình) | "fit" (thu vừa khung)
+  const [zoomMode, setZoomMode] = useState<"fill" | "fit">("fill");
+
+  // Kích thước của container màn hình và video gốc
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+
   // Trạng thái cho thanh tiến trình (Progress Bar & Scrubbing)
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
@@ -48,6 +61,31 @@ export default function VideoPlayer({
   const [pendingSeekTime, setPendingSeekTime] = useState<number | null>(null);
   const [isHovering, setIsHovering] = useState<boolean>(false);
   const wasPlayingBeforeScrub = useRef<boolean>(false);
+
+  // Theo dõi kích thước container thực tế qua ResizeObserver
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateSize = () => {
+      if (container.clientWidth > 0 && container.clientHeight > 0) {
+        setContainerSize({
+          width: container.clientWidth,
+          height: container.clientHeight,
+        });
+      }
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+
+    window.addEventListener("resize", updateSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
+  }, []);
 
   // Cập nhật phần trăm đã đệm (buffered)
   const updateBuffered = useCallback(() => {
@@ -201,7 +239,53 @@ export default function VideoPlayer({
     }
   };
 
+  // Xác định chế độ xoay 90 hoặc 270 độ
   const isRotated90 = rotation === 90 || rotation === 270;
+
+  // Lấy kích thước container (ưu tiên containerSize, fallback window)
+  const screenWidth =
+    containerSize.width > 0
+      ? containerSize.width
+      : typeof window !== "undefined"
+      ? window.innerWidth
+      : 390;
+  const screenHeight =
+    containerSize.height > 0
+      ? containerSize.height
+      : typeof window !== "undefined"
+      ? window.innerHeight
+      : 844;
+
+  const maxScreenDim = Math.max(screenWidth, screenHeight);
+  const minScreenDim = Math.min(screenWidth, screenHeight);
+  const isPortrait = screenHeight >= screenWidth;
+
+  // Lấy tỷ lệ khung hình video (ưu tiên video thực tế, fallback 16:9 cho video ngang)
+  const videoAspect =
+    (videoRef.current?.videoWidth && videoRef.current?.videoHeight
+      ? videoRef.current.videoWidth / videoRef.current.videoHeight
+      : null) ||
+    (videoDimensions.width > 0 && videoDimensions.height > 0
+      ? videoDimensions.width / videoDimensions.height
+      : 16 / 9);
+
+  // Tính toán kích thước tự động thu phóng khi xoay ngang:
+  // - zoomMode === "fill": Chiều dài video (width) tự động phóng to bằng chiều lớn nhất của màn hình (maxScreenDim)
+  // - zoomMode === "fit": Chiều ngang video thu vừa khít chiều nhỏ của màn hình không bị cắt mép
+  let rotatedWidth = 0;
+  let rotatedHeight = 0;
+
+  if (isRotated90) {
+    if (zoomMode === "fill") {
+      const targetLength = isPortrait ? maxScreenDim : screenHeight;
+      rotatedWidth = targetLength;
+      rotatedHeight = targetLength / videoAspect;
+    } else {
+      const targetBreadth = isPortrait ? minScreenDim : screenWidth;
+      rotatedHeight = targetBreadth;
+      rotatedWidth = targetBreadth * videoAspect;
+    }
+  }
 
   // Tính tỷ lệ hiển thị thanh tiến trình
   const activeTime = isScrubbing && pendingSeekTime !== null ? pendingSeekTime : currentTime;
@@ -213,14 +297,25 @@ export default function VideoPlayer({
       onClick={togglePlay}
       className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none"
     >
-      {/* Video Container với CSS Transform để xoay */}
+      {/* Video Container với CSS Transform để xoay và tự động thu phóng theo chiều lớn nhất của screen */}
       <div
-        className="w-full h-full flex items-center justify-center transition-transform duration-300"
-        style={{
-          transform: `rotate(${rotation}deg)`,
-          width: isRotated90 ? "100vh" : "100%",
-          height: isRotated90 ? "100vw" : "100%",
-        }}
+        className="flex items-center justify-center transition-all duration-300 ease-out"
+        style={
+          isRotated90
+            ? {
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                width: `${rotatedWidth}px`,
+                height: `${rotatedHeight}px`,
+                transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+              }
+            : {
+                width: "100%",
+                height: "100%",
+                transform: `rotate(${rotation}deg)`,
+              }
+        }
       >
         <video
           ref={videoRef}
@@ -228,7 +323,7 @@ export default function VideoPlayer({
           playsInline
           loop
           preload="metadata"
-          className="w-full h-full object-contain"
+          className="w-full h-full object-contain pointer-events-auto select-none"
           onTimeUpdate={() => {
             if (!isScrubbing && videoRef.current) {
               setCurrentTime(videoRef.current.currentTime);
@@ -238,6 +333,12 @@ export default function VideoPlayer({
           onLoadedMetadata={() => {
             if (videoRef.current) {
               setDuration(videoRef.current.duration || 0);
+              if (videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+                setVideoDimensions({
+                  width: videoRef.current.videoWidth,
+                  height: videoRef.current.videoHeight,
+                });
+              }
               updateBuffered();
             }
           }}
@@ -289,7 +390,7 @@ export default function VideoPlayer({
           </button>
         )}
 
-        {/* Nút xoay video */}
+        {/* Nút xoay video 90° */}
         <button
           onClick={handleRotate}
           title="Xoay video 90°"
@@ -297,6 +398,28 @@ export default function VideoPlayer({
         >
           <RotateCw className="w-6 h-6" />
         </button>
+
+        {/* Nút chuyển đổi thu phóng lớn nhất (Fill) / vừa khung (Fit) khi đang xoay */}
+        {isRotated90 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomMode((prev) => (prev === "fill" ? "fit" : "fill"));
+            }}
+            title={
+              zoomMode === "fill"
+                ? "Thu vừa khung hình (Fit)"
+                : "Phóng to theo chiều lớn nhất của màn hình (Fill)"
+            }
+            className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+          >
+            {zoomMode === "fill" ? (
+              <Minimize2 className="w-6 h-6 text-yellow-400" />
+            ) : (
+              <Maximize2 className="w-6 h-6 text-blue-400" />
+            )}
+          </button>
+        )}
 
         {/* Nút Bật/Tắt âm thanh */}
         <button
