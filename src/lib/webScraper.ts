@@ -367,9 +367,73 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
   }
 }
 
+// Trích xuất các liên kết bài viết chi tiết từ trang danh mục / danh sách (Loại bỏ 100% link quảng cáo)
+export function extractInternalDetailLinks(html: string, baseUrl: string): string[] {
+  let parsedBase: URL;
+  try {
+    parsedBase = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+
+  const aRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>/gi;
+  const detailUrls = new Set<string>();
+  let match;
+
+  while ((match = aRegex.exec(html)) !== null) {
+    const raw = match[1].trim();
+    if (!raw || raw.startsWith("#") || raw.startsWith("javascript:") || raw.startsWith("mailto:")) {
+      continue;
+    }
+
+    try {
+      const u = new URL(raw, parsedBase.href);
+      // Chỉ lấy link cùng domain (loại bỏ 100% link quảng cáo, redirect ngoài)
+      if (u.hostname !== parsedBase.hostname) continue;
+
+      const path = u.pathname.toLowerCase();
+
+      // Bỏ qua trang điều hướng tĩnh, phân trang hoặc trang quản trị
+      if (
+        path === "/" ||
+        path.includes("/category/") ||
+        path.includes("/chuyen-muc/") ||
+        path.includes("/the-loai/") ||
+        path.includes("/tag/") ||
+        path.includes("/tags/") ||
+        path.includes("/page/") ||
+        path.includes("/author/") ||
+        path.includes("/search/") ||
+        path.includes("/login") ||
+        path.includes("/register") ||
+        path.includes("/wp-admin") ||
+        path.match(/\.(css|js|json|xml|ico|svg|png|jpg|webp)$/i)
+      ) {
+        continue;
+      }
+
+      // Nhận diện link bài viết chi tiết:
+      // - Kết thúc bằng ID: /\d+\/?$/ (như /.../53440/)
+      // - Chứa từ khóa bài viết: /video/, /phim/, /clip/, /watch/, /album/, /post/, /view/
+      const isPost =
+        /\/\d+\/?$/.test(u.pathname) ||
+        /(?:video|phim|clip|watch|album|post|view|detail|p)\//i.test(u.pathname);
+
+      if (isPost && u.href !== parsedBase.href) {
+        detailUrls.add(u.href);
+      }
+    } catch {
+      // bỏ qua URL lỗi
+    }
+  }
+
+  return Array.from(detailUrls);
+}
+
 // Bóc tách media từ nhiều URL cùng lúc (Multi-page Web Scraper)
 export async function scrapeMultipleWebUrls(
-  targetUrls: string[]
+  targetUrls: string[],
+  options?: { deepCrawl?: boolean; maxDeepPerUrl?: number }
 ): Promise<ScrapedWebResult> {
   // Lọc danh sách URL hợp lệ và loại bỏ trùng lặp URL đầu vào
   const cleanUrls = Array.from(
@@ -384,9 +448,46 @@ export async function scrapeMultipleWebUrls(
     throw new Error("Không tìm thấy đường dẫn URL hợp lệ nào để quét");
   }
 
+  const deepCrawl = Boolean(options?.deepCrawl);
+  const maxDeepPerUrl = options?.maxDeepPerUrl || 20;
+
+  // Nếu bật chế độ Deep Crawl: tìm các link bài viết chi tiết từ mỗi trang danh mục
+  let finalUrlsToScrape: string[] = [];
+
+  if (deepCrawl) {
+    for (const url of cleanUrls) {
+      try {
+        const res = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (res.ok) {
+          const html = await res.text();
+          const detailLinks = extractInternalDetailLinks(html, url);
+          if (detailLinks.length > 0) {
+            finalUrlsToScrape.push(...detailLinks.slice(0, maxDeepPerUrl));
+          } else {
+            finalUrlsToScrape.push(url);
+          }
+        } else {
+          finalUrlsToScrape.push(url);
+        }
+      } catch {
+        finalUrlsToScrape.push(url);
+      }
+    }
+    finalUrlsToScrape = Array.from(new Set(finalUrlsToScrape));
+  } else {
+    finalUrlsToScrape = cleanUrls;
+  }
+
   // Quét đồng thời tất cả các trang web
   const results = await Promise.allSettled(
-    cleanUrls.map((url) => scrapeSingleWebUrl(url))
+    finalUrlsToScrape.map((url) => scrapeSingleWebUrl(url))
   );
 
   const pages: ScrapedPageSummary[] = [];

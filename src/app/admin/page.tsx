@@ -82,6 +82,7 @@ export default function AdminDashboardPage() {
   const [webScrapeUrl, setWebScrapeUrl] = useState("");
   const [isScrapingWeb, setIsScrapingWeb] = useState(false);
   const [scrapedWebTitle, setScrapedWebTitle] = useState("");
+  const [isDeepCrawl, setIsDeepCrawl] = useState(false);
 
   // States cho công cụ tạo dải link phân trang tự động
   const [showPaginationBuilder, setShowPaginationBuilder] = useState(false);
@@ -330,7 +331,7 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/scrape-web-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl }),
+        body: JSON.stringify({ url: targetUrl, deepCrawl: isDeepCrawl }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Không thể bóc tách media từ trang web");
@@ -1437,6 +1438,24 @@ export default function AdminDashboardPage() {
                       onChange={(e) => setWebScrapeUrl(e.target.value)}
                       className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none focus:border-blue-500 transition resize-y font-mono"
                     />
+                  </div>
+
+                  {/* Tuỳ chọn Deep Crawl */}
+                  <div className="flex items-center gap-2 p-2.5 bg-neutral-850/80 rounded-xl border border-neutral-700/60">
+                    <label className="flex items-center gap-2.5 cursor-pointer select-none text-xs text-neutral-300 hover:text-white transition">
+                      <input
+                        type="checkbox"
+                        checked={isDeepCrawl}
+                        onChange={(e) => setIsDeepCrawl(e.target.checked)}
+                        className="w-4 h-4 rounded text-blue-600 bg-neutral-900 border-neutral-650 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="font-semibold text-blue-400">
+                        🔍 Cào sâu vào các bài viết con (Deep Crawl)
+                      </span>
+                      <span className="text-[11px] text-neutral-400">
+                        — Tự động chui vào từng bài viết trong danh mục/tìm kiếm để trích xuất video & iframe ẩn, bỏ qua 100% link quảng cáo rác.
+                      </span>
+                    </label>
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

@@ -10,7 +10,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { url, urls } = body;
+    const { url, urls, deepCrawl, maxDeepPerUrl } = body;
 
     let targetUrls: string[] = [];
 
@@ -31,7 +31,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await scrapeMultipleWebUrls(targetUrls);
+    const result = await scrapeMultipleWebUrls(targetUrls, {
+      deepCrawl: Boolean(deepCrawl),
+      maxDeepPerUrl: typeof maxDeepPerUrl === "number" ? maxDeepPerUrl : 20,
+    });
 
     if (result.totalFound === 0) {
       return NextResponse.json(
