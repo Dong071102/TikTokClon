@@ -76,9 +76,10 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       type, // "IMAGE" | "VIDEO"
-      sourceType, // "X_TWITTER" | "TIKTOK" | "INSTAGRAM" | "DIRECT_LINK" | "UPLOAD"
+      sourceType, // "X_TWITTER" | "TIKTOK" | "INSTAGRAM" | "DIRECT_LINK" | "UPLOAD" | "WEB_SCRAPE"
       sourceUrl,
       mediaUrl,
+      galleryUrls = [], // string[] cho Album / Gallery
       thumbnailUrl,
       title,
       storageMode = "DIRECT_LINK", // "DIRECT_LINK" | "LOCAL_STORAGE"
@@ -87,22 +88,43 @@ export async function POST(request: Request) {
       defaultRotate = 0,
     } = body;
 
-    if (!type || !mediaUrl) {
-      return NextResponse.json({ error: "Thiếu thông tin mediaUrl hoặc type" }, { status: 400 });
+    const initialMediaUrl = mediaUrl || (Array.isArray(galleryUrls) && galleryUrls.length > 0 ? galleryUrls[0] : null);
+
+    if (!type || !initialMediaUrl) {
+      return NextResponse.json({ error: "Thiếu thông tin mediaUrl hoặc galleryUrls hoặc type" }, { status: 400 });
     }
 
-    let finalMediaUrl = mediaUrl;
+    let finalMediaUrl = initialMediaUrl;
+    let finalGalleryUrls: string[] = Array.isArray(galleryUrls) ? [...galleryUrls] : [];
     let localPath: string | null = null;
 
     // Nếu chọn phương án Tải về máy chủ cục bộ (LOCAL_STORAGE)
-    if (storageMode === "LOCAL_STORAGE" && !mediaUrl.startsWith("/uploads/")) {
-      try {
-        const downloaded = await downloadMediaLocally(mediaUrl, type);
-        finalMediaUrl = downloaded.localUrl;
-        localPath = downloaded.localPath;
-      } catch (dlErr: any) {
-        console.error("[DOWNLOAD_FAILED_FALLBACK_TO_DIRECT]", dlErr);
-        // Fallback to direct link if download fails
+    if (storageMode === "LOCAL_STORAGE") {
+      // 1. Tải ảnh/video đại diện chính
+      if (!finalMediaUrl.startsWith("/uploads/")) {
+        try {
+          const downloaded = await downloadMediaLocally(finalMediaUrl, type);
+          finalMediaUrl = downloaded.localUrl;
+          localPath = downloaded.localPath;
+        } catch (dlErr: any) {
+          console.error("[DOWNLOAD_FAILED_FALLBACK_TO_DIRECT]", dlErr);
+        }
+      }
+
+      // 2. Tải toàn bộ các ảnh trong gallery (nếu có)
+      if (finalGalleryUrls.length > 0) {
+        finalGalleryUrls = await Promise.all(
+          finalGalleryUrls.map(async (imgUrl: string) => {
+            if (imgUrl.startsWith("/uploads/")) return imgUrl;
+            try {
+              const dl = await downloadMediaLocally(imgUrl, "IMAGE");
+              return dl.localUrl;
+            } catch (err) {
+              console.error("[DOWNLOAD_GALLERY_IMG_FAILED]", imgUrl, err);
+              return imgUrl;
+            }
+          })
+        );
       }
     }
 
@@ -119,6 +141,7 @@ export async function POST(request: Request) {
           sourceUrl: sourceUrl || null,
           storageMode: storageMode === "LOCAL_STORAGE" ? "LOCAL_STORAGE" : "DIRECT_LINK",
           mediaUrl: finalMediaUrl,
+          galleryUrls: finalGalleryUrls,
           localPath,
           thumbnailUrl: thumbnailUrl || null,
           title: title || null,

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import VideoPlayer from "./VideoPlayer";
 import ImageViewer from "./ImageViewer";
+import GalleryViewer from "./GalleryViewer";
 import TagOverlay from "./TagOverlay";
 import {
   Tag as TagIcon,
@@ -25,6 +26,7 @@ interface MediaItem {
   id: string;
   type: "IMAGE" | "VIDEO";
   mediaUrl: string;
+  galleryUrls?: string[];
   thumbnailUrl?: string;
   title?: string;
   isLandscape?: boolean;
@@ -454,6 +456,14 @@ export default function TikTokFeed() {
                 toggleMute={() => setIsMuted((prev) => !prev)}
                 defaultRotate={item.defaultRotate}
                 isLandscape={item.isLandscape}
+                isFavorite={favorites.includes(item.id)}
+                onToggleFavorite={() => toggleFavorite(item.id)}
+              />
+            ) : item.galleryUrls && item.galleryUrls.length > 1 ? (
+              <GalleryViewer
+                images={item.galleryUrls}
+                alt={item.title || "Gallery"}
+                isActive={idx === activeIndex}
                 isFavorite={favorites.includes(item.id)}
                 onToggleFavorite={() => toggleFavorite(item.id)}
               />

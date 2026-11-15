@@ -19,6 +19,7 @@ enum SourceType {
   YOUTUBE
   DIRECT_LINK
   UPLOAD
+  WEB_SCRAPE
 }
 
 enum StorageMode {
@@ -38,6 +39,7 @@ model MediaItem {
   title        String?
   isLandscape  Boolean        @default(false)
   defaultRotate Int           @default(0) // 0, 90, 180, 270 degrees
+  galleryUrls  String[]       @default([]) // Danh sách URL ảnh cho Gallery / Album
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   tags         MediaItemTag[]

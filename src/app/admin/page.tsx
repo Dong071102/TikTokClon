@@ -21,6 +21,7 @@ import {
   Pencil,
   X,
   Plus,
+  Layers,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -52,7 +53,7 @@ function renderAdminTextWithLinks(text?: string | null) {
 
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"link" | "upload" | "list">("link");
+  const [activeTab, setActiveTab] = useState<"link" | "web_images" | "upload" | "list">("link");
   const [user, setUser] = useState<{ email: string; username: string } | null>(null);
 
   // States cho Tab 1: Thêm từ Link
@@ -65,6 +66,18 @@ export default function AdminDashboardPage() {
   const [isLandscape, setIsLandscape] = useState(false);
   const [isSubmittingLink, setIsSubmittingLink] = useState(false);
   const [linkMsg, setLinkMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // States cho Tab Bóc tách Ảnh Web (Gallery / Album)
+  const [webScrapeUrl, setWebScrapeUrl] = useState("");
+  const [isScrapingWeb, setIsScrapingWeb] = useState(false);
+  const [scrapedWebTitle, setScrapedWebTitle] = useState("");
+  const [scrapedWebImages, setScrapedWebImages] = useState<string[]>([]);
+  const [selectedWebImages, setSelectedWebImages] = useState<string[]>([]);
+  const [webStorageMode, setWebStorageMode] = useState<"DIRECT_LINK" | "LOCAL_STORAGE">("DIRECT_LINK");
+  const [webGalleryTitle, setWebGalleryTitle] = useState("");
+  const [webGalleryTags, setWebGalleryTags] = useState("");
+  const [isSubmittingWebGallery, setIsSubmittingWebGallery] = useState(false);
+  const [webScrapeMsg, setWebScrapeMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // States cho Tab 2: Upload File
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -191,6 +204,99 @@ export default function AdminDashboardPage() {
       setLinkMsg({ type: "error", text: err.message });
     } finally {
       setIsSubmittingLink(false);
+    }
+  };
+
+  // 1.2 Xử lý Quét & Bóc tách ảnh từ Web (Gallery)
+  const handleScrapeWeb = async () => {
+    if (!webScrapeUrl.trim()) return;
+    setIsScrapingWeb(true);
+    setWebScrapeMsg(null);
+    setScrapedWebImages([]);
+    setSelectedWebImages([]);
+
+    try {
+      const res = await fetch("/api/admin/scrape-web-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: webScrapeUrl }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Không thể bóc tách ảnh từ trang web");
+
+      setScrapedWebTitle(json.data.title || "");
+      setWebGalleryTitle(json.data.title || "");
+      setScrapedWebImages(json.data.images || []);
+      // Mặc định chọn tất cả các ảnh tìm thấy
+      setSelectedWebImages(json.data.images || []);
+      setWebScrapeMsg({
+        type: "success",
+        text: `Đã tìm thấy ${json.data.images.length} hình ảnh trên trang web! Hãy chọn các ảnh để tạo Gallery.`,
+      });
+    } catch (err: any) {
+      setWebScrapeMsg({ type: "error", text: err.message });
+    } finally {
+      setIsScrapingWeb(false);
+    }
+  };
+
+  const toggleSelectWebImage = (imgUrl: string) => {
+    setSelectedWebImages((prev) =>
+      prev.includes(imgUrl) ? prev.filter((u) => u !== imgUrl) : [...prev, imgUrl]
+    );
+  };
+
+  const handleSelectAllWebImages = () => {
+    setSelectedWebImages([...scrapedWebImages]);
+  };
+
+  const handleDeselectAllWebImages = () => {
+    setSelectedWebImages([]);
+  };
+
+  const handleSaveWebGallery = async () => {
+    if (selectedWebImages.length === 0) {
+      setWebScrapeMsg({ type: "error", text: "Vui lòng chọn ít nhất 1 hình ảnh để tạo Gallery" });
+      return;
+    }
+
+    setIsSubmittingWebGallery(true);
+    setWebScrapeMsg(null);
+
+    try {
+      const tags = webGalleryTags
+        .split(/[,;\s]+/)
+        .map((t) => t.trim().replace(/^#/, ""))
+        .filter(Boolean);
+
+      const res = await fetch("/api/admin/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "IMAGE",
+          sourceType: "WEB_SCRAPE",
+          sourceUrl: webScrapeUrl,
+          mediaUrl: selectedWebImages[0],
+          galleryUrls: selectedWebImages,
+          title: webGalleryTitle.trim() || scrapedWebTitle || null,
+          storageMode: webStorageMode,
+          tags,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Không thể lưu Gallery");
+
+      setWebScrapeMsg({
+        type: "success",
+        text: `Tạo Gallery thành công với ${selectedWebImages.length} ảnh! Đã lưu vào hệ thống.`,
+      });
+      loadMediaList();
+      loadExistingTags();
+    } catch (err: any) {
+      setWebScrapeMsg({ type: "error", text: err.message });
+    } finally {
+      setIsSubmittingWebGallery(false);
     }
   };
 
@@ -530,6 +636,18 @@ export default function AdminDashboardPage() {
         </button>
 
         <button
+          onClick={() => setActiveTab("web_images")}
+          className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+            activeTab === "web_images"
+              ? "border-blue-500 text-blue-400 font-semibold"
+              : "border-transparent text-neutral-400 hover:text-white"
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Bóc tách Ảnh Web (Gallery)</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("upload")}
           className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "upload"
@@ -748,7 +866,241 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: TẢI FILE TRỰC TIẾP */}
+        {/* TAB BÓC TÁCH ẢNH WEB (GALLERY / ALBUM) */}
+        {activeTab === "web_images" && (
+          <div className="space-y-6">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-blue-400" />
+                <span>Bóc tách Ảnh từ Web & Tạo Gallery (Album)</span>
+              </h2>
+              <p className="text-xs text-neutral-400 mb-6">
+                Dán link bất kỳ trang web nào (báo, blog, diễn đàn, thư viện ảnh...), hệ thống sẽ tự động quét và bóc tách tất cả hình ảnh. Bạn có thể chọn các ảnh cần thiết để tạo thành một bài viết Gallery lướt ngang.
+              </p>
+
+              {webScrapeMsg && (
+                <div
+                  className={`p-3.5 rounded-xl text-sm mb-6 flex items-center gap-2 ${
+                    webScrapeMsg.type === "success"
+                      ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                      : "bg-red-500/10 text-red-400 border border-red-500/20"
+                  }`}
+                >
+                  {webScrapeMsg.type === "success" ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{webScrapeMsg.text}</span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <input
+                  type="url"
+                  placeholder="Dán link trang web vào đây (ví dụ: https://example.com/gallery, bài viết, blog...)"
+                  value={webScrapeUrl}
+                  onChange={(e) => setWebScrapeUrl(e.target.value)}
+                  className="flex-1 px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none focus:border-blue-500 transition"
+                />
+                <button
+                  type="button"
+                  onClick={handleScrapeWeb}
+                  disabled={isScrapingWeb || !webScrapeUrl.trim()}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 shrink-0"
+                >
+                  {isScrapingWeb ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang quét ảnh...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-4 h-4" />
+                      <span>Quét ảnh từ Web</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* KẾT QUẢ QUÉT ẢNH VÀ CHỌN TẠO GALLERY */}
+            {scrapedWebImages.length > 0 && (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-6 animate-fade-in">
+                {/* Header thanh công cụ chọn ảnh */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800">
+                  <div>
+                    <h3 className="font-bold text-base text-neutral-200 flex items-center gap-2">
+                      <span>Chọn ảnh để đưa vào Gallery</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-600/30 text-blue-400 border border-blue-500/40 text-xs font-semibold">
+                        Đã chọn {selectedWebImages.length} / {scrapedWebImages.length} ảnh
+                      </span>
+                    </h3>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Nhấn vào từng hình ảnh để chọn hoặc bỏ chọn. Các ảnh được chọn sẽ xuất hiện trong album lướt ngang.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllWebImages}
+                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition active:scale-95"
+                    >
+                      Chọn tất cả ({scrapedWebImages.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllWebImages}
+                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-400 hover:text-white font-medium transition active:scale-95"
+                    >
+                      Bỏ chọn tất cả
+                    </button>
+                  </div>
+                </div>
+
+                {/* Grid các hình ảnh đã tìm thấy */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[500px] overflow-y-auto no-scrollbar p-1">
+                  {scrapedWebImages.map((imgUrl, idx) => {
+                    const isSelected = selectedWebImages.includes(imgUrl);
+                    const selectedIndex = selectedWebImages.indexOf(imgUrl);
+
+                    return (
+                      <div
+                        key={`${imgUrl}-${idx}`}
+                        onClick={() => toggleSelectWebImage(imgUrl)}
+                        className={`group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
+                          isSelected
+                            ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/20 scale-[0.98]"
+                            : "border-neutral-800 hover:border-neutral-600 opacity-60 hover:opacity-100"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={imgUrl}
+                          alt={`Scraped ${idx + 1}`}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover select-none pointer-events-none"
+                          loading="lazy"
+                        />
+
+                        {/* Checkbox badge ở góc trên phải */}
+                        <div
+                          className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shadow-md transition ${
+                            isSelected
+                              ? "bg-blue-600 text-white scale-100"
+                              : "bg-black/50 border border-white/40 text-transparent scale-90 group-hover:border-white"
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </div>
+
+                        {/* Thứ tự trong Gallery ở góc trên trái */}
+                        {isSelected && (
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-sm text-[10px] font-bold text-blue-300 border border-blue-400/30">
+                            #{selectedIndex + 1}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Form Thiết lập & Lưu Gallery (Hiển thị khi đã chọn ít nhất 1 ảnh) */}
+                <div className="pt-4 border-t border-neutral-800 space-y-4">
+                  {/* Tiêu đề Gallery */}
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                      Tiêu đề bài viết Gallery
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nhập tiêu đề hoặc mô tả cho bộ sưu tập ảnh này..."
+                      value={webGalleryTitle}
+                      onChange={(e) => setWebGalleryTitle(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                    />
+                  </div>
+
+                  {/* Phương án lưu trữ */}
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                      Phương án lưu trữ cho {selectedWebImages.length} ảnh
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setWebStorageMode("DIRECT_LINK")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition ${
+                          webStorageMode === "DIRECT_LINK"
+                            ? "border-blue-500 bg-blue-500/10 text-white"
+                            : "border-neutral-800 bg-neutral-800 text-neutral-400"
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 font-semibold text-xs text-blue-400">
+                          <Globe className="w-3.5 h-3.5" /> Direct Link (Khuyên dùng)
+                        </span>
+                        <span className="text-[11px] leading-tight opacity-70">
+                          Lưu URL trực tiếp từ trang web gốc, không tốn dung lượng máy chủ.
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWebStorageMode("LOCAL_STORAGE")}
+                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition ${
+                          webStorageMode === "LOCAL_STORAGE"
+                            ? "border-green-500 bg-green-500/10 text-white"
+                            : "border-neutral-800 bg-neutral-800 text-neutral-400"
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 font-semibold text-xs text-green-400">
+                          <HardDrive className="w-3.5 h-3.5" /> Tải về Máy chủ
+                        </span>
+                        <span className="text-[11px] leading-tight opacity-70">
+                          Máy chủ tải toàn bộ {selectedWebImages.length} ảnh về thư mục cục bộ vĩnh viễn.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Gắn Tags */}
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                      Gắn Tags (cách nhau bởi dấu phẩy hoặc khoảng trắng)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="gallery, cosplay, travel, fashion, wallpaper..."
+                      value={webGalleryTags}
+                      onChange={(e) => setWebGalleryTags(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                    />
+                    {renderTagSelector(webGalleryTags, setWebGalleryTags)}
+                  </div>
+
+                  {/* Nút hành động Lưu Gallery */}
+                  <button
+                    type="button"
+                    onClick={handleSaveWebGallery}
+                    disabled={isSubmittingWebGallery || selectedWebImages.length === 0}
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-98 disabled:opacity-50 text-white font-semibold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+                  >
+                    {isSubmittingWebGallery ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Đang lưu Gallery ({selectedWebImages.length} ảnh)...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Layers className="w-4 h-4" />
+                        <span>Tạo Gallery ({selectedWebImages.length} ảnh) & Lưu vào Hệ thống</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: TẢI FILE TRỰC TIẾP */}
         {activeTab === "upload" && (
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
@@ -926,10 +1278,16 @@ export default function AdminDashboardPage() {
                       )}
 
                       {/* Badge Type & Source */}
-                      <div className="absolute top-2 left-2 flex gap-1.5 z-10">
+                      <div className="absolute top-2 left-2 flex gap-1.5 z-10 flex-wrap">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-black/60 text-white backdrop-blur-md">
                           {item.type}
                         </span>
+                        {item.galleryUrls && item.galleryUrls.length > 1 && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-600/80 text-white backdrop-blur-md flex items-center gap-1">
+                            <Layers className="w-3 h-3" />
+                            <span>Album ({item.galleryUrls.length})</span>
+                          </span>
+                        )}
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-600/70 text-white backdrop-blur-md">
                           {item.sourceType}
                         </span>
