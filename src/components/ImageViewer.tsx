@@ -101,7 +101,7 @@ export default function ImageViewer({
             </TransformComponent>
 
             {/* Nút điều khiển nhanh cho ảnh */}
-            <div className="absolute right-3 bottom-24 flex flex-col gap-4 z-30">
+            <div className="absolute right-2.5 sm:right-3.5 bottom-16 sm:bottom-20 flex flex-col gap-2.5 sm:gap-3 z-30 opacity-75 hover:opacity-100 active:opacity-100 focus-within:opacity-100 transition-all duration-300">
               {/* Nút Yêu thích (Heart) */}
               {onToggleFavorite && (
                 <button
@@ -110,10 +110,10 @@ export default function ImageViewer({
                     onToggleFavorite();
                   }}
                   title={isFavorite ? "Bỏ yêu thích" : "Yêu thích"}
-                  className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+                  className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
                 >
                   <Heart
-                    className={`w-6 h-6 transition ${
+                    className={`w-6 h-6 sm:w-7 sm:h-7 transition ${
                       isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-white"
                     }`}
                   />
@@ -128,9 +128,9 @@ export default function ImageViewer({
                   setIsZoomed(true);
                 }}
                 title="Phóng to"
-                className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+                className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
               >
-                <ZoomIn className="w-6 h-6" />
+                <ZoomIn className="w-6 h-6 sm:w-7 sm:h-7" />
               </button>
 
               {/* Nút đặt lại tỉ lệ ban đầu */}
@@ -141,18 +141,18 @@ export default function ImageViewer({
                   setIsZoomed(false);
                 }}
                 title="Thu nhỏ về ban đầu"
-                className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+                className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
               >
-                <RotateCcw className="w-6 h-6" />
+                <RotateCcw className="w-6 h-6 sm:w-7 sm:h-7" />
               </button>
 
               {/* Nút toàn màn hình */}
               <button
                 onClick={toggleFullscreen}
                 title="Toàn màn hình"
-                className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+                className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
               >
-                {isFullscreen ? <Minimize2 className="w-6 h-6" /> : <Maximize2 className="w-6 h-6" />}
+                {isFullscreen ? <Minimize2 className="w-6 h-6 sm:w-7 sm:h-7" /> : <Maximize2 className="w-6 h-6 sm:w-7 sm:h-7" />}
               </button>
             </div>
           </>

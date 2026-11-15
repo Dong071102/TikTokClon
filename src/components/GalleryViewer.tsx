@@ -136,17 +136,17 @@ export default function GalleryViewer({
 
       {/* Nút Yêu thích (Heart) phía bên phải */}
       {onToggleFavorite && (
-        <div className="absolute right-3 bottom-24 flex flex-col gap-4 z-30">
+        <div className="absolute right-2.5 sm:right-3.5 bottom-16 sm:bottom-20 flex flex-col gap-2.5 sm:gap-3 z-30 opacity-75 hover:opacity-100 active:opacity-100 focus-within:opacity-100 transition-all duration-300">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleFavorite();
             }}
             title={isFavorite ? "Bỏ yêu thích" : "Yêu thích"}
-            className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+            className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
           >
             <Heart
-              className={`w-6 h-6 transition ${
+              className={`w-6 h-6 sm:w-7 sm:h-7 transition ${
                 isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-white"
               }`}
             />

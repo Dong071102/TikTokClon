@@ -370,12 +370,12 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Nút hành động nhanh phía bên phải - khi xoay ngang sẽ thu nhỏ lại và có opacity mờ để không che video */}
+      {/* Nút hành động nhanh phía bên phải - thiết kế gọn gàng, bán trong suốt cả khi xem thường lẫn xoay màn hình */}
       <div
         className={`absolute z-30 flex flex-col transition-all duration-300 ${
           isRotated90
-            ? "right-2 sm:right-3 bottom-12 sm:bottom-16 gap-2 opacity-40 hover:opacity-100 active:opacity-100 focus-within:opacity-100"
-            : "right-3 bottom-24 gap-4 opacity-100"
+            ? "right-2 sm:right-3.5 bottom-12 sm:bottom-16 gap-2 sm:gap-2.5 opacity-65 hover:opacity-100 active:opacity-100 focus-within:opacity-100"
+            : "right-2.5 sm:right-3.5 bottom-16 sm:bottom-20 gap-2.5 sm:gap-3 opacity-75 hover:opacity-100 active:opacity-100 focus-within:opacity-100"
         }`}
       >
         {/* Nút Yêu thích (Heart) */}
@@ -386,14 +386,10 @@ export default function VideoPlayer({
               onToggleFavorite();
             }}
             title={isFavorite ? "Bỏ yêu thích" : "Yêu thích"}
-            className={
-              isRotated90
-                ? "p-1.5 sm:p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 active:scale-90 transition border border-white/10 shadow-md"
-                : "p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
-            }
+            className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
           >
             <Heart
-              className={`${isRotated90 ? "w-4 h-4" : "w-6 h-6"} transition ${
+              className={`w-6 h-6 sm:w-7 sm:h-7 transition ${
                 isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-white"
               }`}
             />
@@ -404,13 +400,9 @@ export default function VideoPlayer({
         <button
           onClick={handleRotate}
           title="Xoay video 90°"
-          className={
-            isRotated90
-              ? "p-1.5 sm:p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 active:scale-90 transition border border-white/10 shadow-md"
-              : "p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
-          }
+          className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
         >
-          <RotateCw className={isRotated90 ? "w-4 h-4" : "w-6 h-6"} />
+          <RotateCw className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
 
         {/* Nút chuyển đổi thu phóng lớn nhất (Fill) / vừa khung (Fit) khi đang xoay */}
@@ -425,12 +417,12 @@ export default function VideoPlayer({
                 ? "Thu vừa khung hình (Fit)"
                 : "Phóng to theo chiều lớn nhất của màn hình (Fill)"
             }
-            className="p-1.5 sm:p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 active:scale-90 transition border border-white/10 shadow-md"
+            className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
           >
             {zoomMode === "fill" ? (
-              <Minimize2 className="w-4 h-4 text-yellow-400" />
+              <Minimize2 className="w-6 h-6 sm:w-7 sm:h-7 text-yellow-400" />
             ) : (
-              <Maximize2 className="w-4 h-4 text-blue-400" />
+              <Maximize2 className="w-6 h-6 sm:w-7 sm:h-7 text-blue-400" />
             )}
           </button>
         )}
@@ -442,16 +434,12 @@ export default function VideoPlayer({
             toggleMute();
           }}
           title={isMuted ? "Bật âm thanh" : "Tắt âm thanh"}
-          className={
-            isRotated90
-              ? "p-1.5 sm:p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 active:scale-90 transition border border-white/10 shadow-md"
-              : "p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
-          }
+          className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
         >
           {isMuted ? (
-            <VolumeX className={`${isRotated90 ? "w-4 h-4" : "w-6 h-6"} text-red-400`} />
+            <VolumeX className="w-6 h-6 sm:w-7 sm:h-7 text-red-400" />
           ) : (
-            <Volume2 className={`${isRotated90 ? "w-4 h-4" : "w-6 h-6"} text-green-400`} />
+            <Volume2 className="w-6 h-6 sm:w-7 sm:h-7 text-green-400" />
           )}
         </button>
 
@@ -459,16 +447,12 @@ export default function VideoPlayer({
         <button
           onClick={toggleFullscreen}
           title="Toàn màn hình"
-          className={
-            isRotated90
-              ? "p-1.5 sm:p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/70 active:scale-90 transition border border-white/10 shadow-md"
-              : "p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
-          }
+          className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
         >
           {isFullscreen ? (
-            <Minimize2 className={isRotated90 ? "w-4 h-4" : "w-6 h-6"} />
+            <Minimize2 className="w-6 h-6 sm:w-7 sm:h-7" />
           ) : (
-            <Maximize2 className={isRotated90 ? "w-4 h-4" : "w-6 h-6"} />
+            <Maximize2 className="w-6 h-6 sm:w-7 sm:h-7" />
           )}
         </button>
       </div>
@@ -506,7 +490,7 @@ export default function VideoPlayer({
         {/* Thanh Track & Fill */}
         <div
           ref={progressBarRef}
-          className="relative w-full h-1 group-hover/progress:h-1.5 transition-all duration-150 bg-white/20 rounded-full overflow-visible touch-none"
+          className="relative w-full h-1.5 group-hover/progress:h-2.5 transition-all duration-150 bg-white/20 rounded-full overflow-visible touch-none"
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
         >
@@ -526,7 +510,7 @@ export default function VideoPlayer({
 
           {/* Scrubber Thumb (nút tròn chỉ vị trí) */}
           <div
-            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-md shadow-black/50 transition-transform pointer-events-none ${
+            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md shadow-black/50 transition-transform pointer-events-none ${
               isScrubbing || isHovering
                 ? "scale-100 opacity-100"
                 : "scale-0 opacity-0 group-hover/progress:scale-100 group-hover/progress:opacity-100"

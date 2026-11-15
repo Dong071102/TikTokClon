@@ -88,6 +88,12 @@ export default function TikTokFeed() {
       }
       return next;
     });
+
+    // Nếu người dùng đang lọc riêng "Mục yêu thích" và bỏ tim bài viết này, loại bỏ bài khỏi danh sách xem
+    if (showFavoritesOnly) {
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      setBasePool((prev) => prev.filter((item) => item.id !== id));
+    }
   };
 
   // Hàm tạo feedKey duy nhất để lặp vô tận không bị trùng React Key
@@ -169,11 +175,12 @@ export default function TikTokFeed() {
     }
   };
 
-  // Tải lại khi thay đổi bộ lọc
+  // Tải lại khi thay đổi bộ lọc (LƯU Ý: Không đưa favorites vào dependency để khi thả tim bài viết trong danh sách tổng không bị load lại và mất bài đang xem)
   useEffect(() => {
     loadMedia(activeTag, showFavoritesOnly, favorites, sortMode, startDate, endDate);
     loadTags();
-  }, [activeTag, showFavoritesOnly, favorites, sortMode, startDate, endDate, loadMedia]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTag, showFavoritesOnly, sortMode, startDate, endDate, loadMedia]);
 
   // Cuộn vô tận không bao giờ hết (Endless Infinite Scroll / Loop):
   // Khi cuộn gần đến cuối danh sách (còn 2-3 bài), tự động nạp tiếp hoặc loop lại
