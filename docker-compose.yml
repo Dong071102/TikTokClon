@@ -2,9 +2,7 @@ version: "3.8"
 
 services:
   tiktok-app:
-    build:
-      context: https://github.com/Dong071102/TikTokClon.git#main
-      dockerfile: Dockerfile
+    image: ghcr.io/dong071102/tiktokclon:latest
     container_name: tiktok-app
     restart: unless-stopped
     ports:
