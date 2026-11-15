@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { downloadMediaLocally } from "@/lib/downloader";
+import fs from "fs";
 
 export async function GET(request: Request) {
   const admin = await getCurrentAdmin();
@@ -10,19 +11,17 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get("page") || "1", 10);
-  const limit = parseInt(searchParams.get("limit") || "20", 10);
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+  const rawLimit = searchParams.get("limit");
+  const limit = rawLimit === "all" ? 1000 : Math.max(1, parseInt(rawLimit || "24", 10));
   const tag = searchParams.get("tag");
-  const type = searchParams.get("type"); // "IMAGE" or "VIDEO"
+  const format = searchParams.get("format") || searchParams.get("type"); // "ALL" | "IMAGE" | "GALLERY" | "VIDEO"
 
   const skip = (page - 1) * limit;
 
-  const where: any = {};
-  if (type === "IMAGE" || type === "VIDEO") {
-    where.type = type;
-  }
+  const baseWhere: any = {};
   if (tag) {
-    where.tags = {
+    baseWhere.tags = {
       some: {
         tag: {
           slug: tag.toLowerCase(),
@@ -31,8 +30,19 @@ export async function GET(request: Request) {
     };
   }
 
+  const where: any = { ...baseWhere };
+  if (format === "VIDEO") {
+    where.type = "VIDEO";
+  } else if (format === "GALLERY") {
+    where.type = "IMAGE";
+    where.galleryUrls = { isEmpty: false };
+  } else if (format === "IMAGE") {
+    where.type = "IMAGE";
+    where.galleryUrls = { isEmpty: true };
+  }
+
   try {
-    const [total, items] = await Promise.all([
+    const [total, items, allCount, videoCount, galleryCount, imageCount] = await Promise.all([
       prisma.mediaItem.count({ where }),
       prisma.mediaItem.findMany({
         where,
@@ -45,6 +55,10 @@ export async function GET(request: Request) {
         skip,
         take: limit,
       }),
+      prisma.mediaItem.count({ where: baseWhere }),
+      prisma.mediaItem.count({ where: { ...baseWhere, type: "VIDEO" } }),
+      prisma.mediaItem.count({ where: { ...baseWhere, type: "IMAGE", galleryUrls: { isEmpty: false } } }),
+      prisma.mediaItem.count({ where: { ...baseWhere, type: "IMAGE", galleryUrls: { isEmpty: true } } }),
     ]);
 
     return NextResponse.json({
@@ -53,16 +67,142 @@ export async function GET(request: Request) {
         ...item,
         tags: item.tags.map((t) => t.tag.name),
       })),
+      counts: {
+        all: allCount,
+        video: videoCount,
+        gallery: galleryCount,
+        image: imageCount,
+      },
       pagination: {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / limit) || 1,
       },
     });
   } catch (err: any) {
     console.error("[GET_MEDIA_ERROR]", err);
     return NextResponse.json({ error: err.message || "Lỗi lấy danh sách media" }, { status: 500 });
+  }
+}
+
+// Xóa media hàng loạt (Bulk Delete)
+export async function DELETE(request: Request) {
+  const admin = await getCurrentAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Chưa đăng nhập quyền Admin" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: "Vui lòng chọn ít nhất một mục để xóa" }, { status: 400 });
+    }
+
+    // Xóa file local nếu có
+    const items = await prisma.mediaItem.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, localPath: true },
+    });
+
+    for (const item of items) {
+      if (item.localPath && fs.existsSync(item.localPath)) {
+        try {
+          await fs.promises.unlink(item.localPath);
+        } catch (e) {
+          console.warn("[BULK_DELETE_FILE_WARN]", e);
+        }
+      }
+    }
+
+    const deleteResult = await prisma.mediaItem.deleteMany({
+      where: { id: { in: ids } },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Đã xóa thành công ${deleteResult.count} mục`,
+      count: deleteResult.count,
+    });
+  } catch (err: any) {
+    console.error("[BULK_DELETE_MEDIA_ERROR]", err);
+    return NextResponse.json({ error: err.message || "Lỗi xóa media hàng loạt" }, { status: 500 });
+  }
+}
+
+// Gán nhãn hàng loạt (Bulk Tag Assignment)
+export async function PATCH(request: Request) {
+  const admin = await getCurrentAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Chưa đăng nhập quyền Admin" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { ids, tags = [], mode = "ADD" } = body; // mode: "ADD" | "REPLACE"
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: "Vui lòng chọn ít nhất một mục để gán nhãn" }, { status: 400 });
+    }
+
+    const tagNames: string[] = Array.isArray(tags)
+      ? tags.map((t: string) => t.trim().replace(/^#/, "")).filter(Boolean)
+      : [];
+
+    if (tagNames.length === 0 && mode === "ADD") {
+      return NextResponse.json({ error: "Vui lòng nhập ít nhất 1 nhãn (tag) hợp lệ" }, { status: 400 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Tạo hoặc lấy tag IDs
+      const tagRecords = [];
+      for (const tagName of tagNames) {
+        const slug = tagName.toLowerCase().replace(/\s+/g, "-");
+        const tag = await tx.tag.upsert({
+          where: { slug },
+          update: {},
+          create: { name: tagName, slug },
+        });
+        tagRecords.push(tag);
+      }
+
+      // 2. Nếu chế độ REPLACE: xóa toàn bộ tag cũ của các media này
+      if (mode === "REPLACE") {
+        await tx.mediaItemTag.deleteMany({
+          where: { mediaItemId: { in: ids } },
+        });
+      }
+
+      // 3. Gán tag mới
+      for (const mediaItemId of ids) {
+        for (const tag of tagRecords) {
+          await tx.mediaItemTag.upsert({
+            where: {
+              mediaItemId_tagId: {
+                mediaItemId,
+                tagId: tag.id,
+              },
+            },
+            update: {},
+            create: {
+              mediaItemId,
+              tagId: tag.id,
+            },
+          });
+        }
+      }
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Đã gán nhãn thành công cho ${ids.length} media`,
+      count: ids.length,
+    });
+  } catch (err: any) {
+    console.error("[BULK_TAG_MEDIA_ERROR]", err);
+    return NextResponse.json({ error: err.message || "Lỗi gán nhãn hàng loạt" }, { status: 500 });
   }
 }
 

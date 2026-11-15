@@ -24,6 +24,13 @@ import {
   Layers,
   Film,
   Video,
+  Tag,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -113,8 +120,27 @@ export default function AdminDashboardPage() {
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [mediaTotal, setMediaTotal] = useState(0);
   const [mediaPage, setMediaPage] = useState(1);
+  const [mediaLimit, setMediaLimit] = useState(24);
+  const [mediaTotalPages, setMediaTotalPages] = useState(1);
   const [loadingList, setLoadingList] = useState(false);
   const [searchTag, setSearchTag] = useState("");
+  const [listFormatFilter, setListFormatFilter] = useState<"ALL" | "IMAGE" | "GALLERY" | "VIDEO">("ALL");
+  const [formatCounts, setFormatCounts] = useState<{ all: number; video: number; gallery: number; image: number }>({
+    all: 0,
+    video: 0,
+    gallery: 0,
+    image: 0,
+  });
+
+  // Chọn & Thao tác hàng loạt (Bulk actions)
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkTagging, setIsBulkTagging] = useState(false);
+  const [showBulkTagModal, setShowBulkTagModal] = useState(false);
+  const [bulkTagInput, setBulkTagInput] = useState("");
+  const [bulkTagMode, setBulkTagMode] = useState<"ADD" | "REPLACE">("ADD");
+  const [bulkActionMsg, setBulkActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
   const [editingTagsInput, setEditingTagsInput] = useState<string>("");
   const [isSavingTags, setIsSavingTags] = useState(false);
@@ -542,46 +568,160 @@ export default function AdminDashboardPage() {
 
   // 3. Tải danh sách media
   const loadMediaList = useCallback(
-    async (page = 1, tag = "") => {
+    async (
+      page = 1,
+      tag = searchTag,
+      format = listFormatFilter,
+      limit = mediaLimit
+    ) => {
       setLoadingList(true);
       try {
         const params = new URLSearchParams();
         params.set("page", String(page));
-        params.set("limit", "15");
+        params.set("limit", String(limit));
         if (tag) params.set("tag", tag);
+        if (format && format !== "ALL") params.set("format", format);
 
         const res = await fetch(`/api/admin/media?${params.toString()}`);
         if (!res.ok) throw new Error("Lỗi tải danh sách");
         const json = await res.json();
         setMediaList(json.items || []);
         setMediaTotal(json.pagination?.total || 0);
+        setMediaTotalPages(json.pagination?.totalPages || 1);
         setMediaPage(page);
+        if (json.counts) {
+          setFormatCounts(json.counts);
+        }
       } catch (err) {
         console.error(err);
       } finally {
         setLoadingList(false);
       }
     },
-    []
+    [searchTag, listFormatFilter, mediaLimit]
   );
 
   useEffect(() => {
     if (activeTab === "list") {
-      loadMediaList(1, searchTag);
+      loadMediaList(mediaPage, searchTag, listFormatFilter, mediaLimit);
     }
-  }, [activeTab, loadMediaList, searchTag]);
+  }, [activeTab, loadMediaList, mediaPage, searchTag, listFormatFilter, mediaLimit]);
 
-  // Xoá media
+  // Chọn / bỏ chọn 1 media
+  const handleToggleSelectMedia = (id: string) => {
+    setSelectedMediaIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Chọn tất cả các media trên trang hiện tại
+  const handleSelectAllOnCurrentPage = () => {
+    const currentPageIds = mediaList.map((m) => m.id);
+    const allSelected =
+      currentPageIds.length > 0 && currentPageIds.every((id) => selectedMediaIds.includes(id));
+    if (allSelected) {
+      setSelectedMediaIds((prev) => prev.filter((id) => !currentPageIds.includes(id)));
+    } else {
+      setSelectedMediaIds((prev) => Array.from(new Set([...prev, ...currentPageIds])));
+    }
+  };
+
+  // Bỏ chọn tất cả danh sách
+  const handleDeselectAllListMedia = () => {
+    setSelectedMediaIds([]);
+  };
+
+  // Xoá media đơn lẻ
   const handleDeleteMedia = async (id: string) => {
     if (!confirm("Bạn có chắc chắn muốn xoá media này?")) return;
     try {
       const res = await fetch(`/api/admin/media/${id}`, { method: "DELETE" });
       if (res.ok) {
         setMediaList((prev) => prev.filter((m) => m.id !== id));
+        setSelectedMediaIds((prev) => prev.filter((item) => item !== id));
         setMediaTotal((prev) => Math.max(prev - 1, 0));
+        loadMediaList(mediaPage, searchTag, listFormatFilter, mediaLimit);
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Xóa media hàng loạt
+  const handleBulkDelete = async () => {
+    if (selectedMediaIds.length === 0) return;
+    if (
+      !confirm(
+        `Bạn có chắc chắn muốn xoá vĩnh viễn ${selectedMediaIds.length} media đã chọn khỏi hệ thống?`
+      )
+    )
+      return;
+
+    setIsBulkDeleting(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedMediaIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi khi xóa hàng loạt");
+
+      setBulkActionMsg({
+        type: "success",
+        text: `Đã xóa thành công ${selectedMediaIds.length} media!`,
+      });
+      setSelectedMediaIds([]);
+      loadMediaList(mediaPage, searchTag, listFormatFilter, mediaLimit);
+      loadExistingTags();
+    } catch (err: any) {
+      setBulkActionMsg({ type: "error", text: err.message || "Xóa hàng loạt thất bại" });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // Gán nhãn hàng loạt
+  const handleBulkAssignTags = async () => {
+    if (selectedMediaIds.length === 0) return;
+    const splitTags = bulkTagInput
+      .split(/[,;\s]+/)
+      .map((t) => t.trim().replace(/^#/, ""))
+      .filter(Boolean);
+
+    if (splitTags.length === 0 && bulkTagMode === "ADD") {
+      alert("Vui lòng nhập ít nhất 1 nhãn (tag) hợp lệ để gán.");
+      return;
+    }
+
+    setIsBulkTagging(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedMediaIds,
+          tags: splitTags,
+          mode: bulkTagMode,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi khi gán nhãn hàng loạt");
+
+      setBulkActionMsg({
+        type: "success",
+        text: `Đã gán nhãn thành công cho ${selectedMediaIds.length} media!`,
+      });
+      setShowBulkTagModal(false);
+      setBulkTagInput("");
+      loadMediaList(mediaPage, searchTag, listFormatFilter, mediaLimit);
+      loadExistingTags();
+    } catch (err: any) {
+      alert(err.message || "Gán nhãn hàng loạt thất bại");
+    } finally {
+      setIsBulkTagging(false);
     }
   };
 
@@ -1598,185 +1738,692 @@ export default function AdminDashboardPage() {
         {/* TAB 3: QUẢN LÝ DANH SÁCH */}
         {activeTab === "list" && (
           <div className="space-y-4">
-            {/* Filter Search */}
-            <div className="flex items-center justify-between gap-4 bg-neutral-900 border border-neutral-800 p-4 rounded-xl">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
-                <input
-                  type="text"
-                  placeholder="Lọc theo tag..."
-                  value={searchTag}
-                  onChange={(e) => setSearchTag(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
-                />
+            {/* Thông báo thao tác hàng loạt */}
+            {bulkActionMsg && (
+              <div
+                className={`p-3.5 rounded-xl border flex items-center justify-between text-xs transition ${
+                  bulkActionMsg.type === "success"
+                    ? "bg-green-500/10 border-green-500/30 text-green-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                <span>{bulkActionMsg.text}</span>
+                <button
+                  type="button"
+                  onClick={() => setBulkActionMsg(null)}
+                  className="p-1 hover:bg-neutral-800 rounded transition"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Thanh lọc định dạng Media (Tất cả, Video, Album/Gallery, Ảnh đơn) */}
+            <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-2xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 p-1 bg-neutral-950 rounded-xl border border-neutral-800 overflow-x-auto max-w-full">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListFormatFilter("ALL");
+                      setMediaPage(1);
+                      loadMediaList(1, searchTag, "ALL", mediaLimit);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                      listFormatFilter === "ALL"
+                        ? "bg-blue-600 text-white shadow"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    Tất cả ({formatCounts.all || mediaTotal})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListFormatFilter("VIDEO");
+                      setMediaPage(1);
+                      loadMediaList(1, searchTag, "VIDEO", mediaLimit);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                      listFormatFilter === "VIDEO"
+                        ? "bg-purple-600 text-white shadow"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    <Film className="w-3.5 h-3.5" />
+                    <span>Video ({formatCounts.video})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListFormatFilter("GALLERY");
+                      setMediaPage(1);
+                      loadMediaList(1, searchTag, "GALLERY", mediaLimit);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                      listFormatFilter === "GALLERY"
+                        ? "bg-pink-600 text-white shadow"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Gallery / Album ({formatCounts.gallery})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListFormatFilter("IMAGE");
+                      setMediaPage(1);
+                      loadMediaList(1, searchTag, "IMAGE", mediaLimit);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                      listFormatFilter === "IMAGE"
+                        ? "bg-emerald-600 text-white shadow"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Ảnh đơn ({formatCounts.image})</span>
+                  </button>
+                </div>
+
+                {/* Chọn số lượng hiển thị mỗi trang */}
+                <div className="flex items-center gap-1.5 text-xs text-neutral-400 ml-auto">
+                  <span>Hiển thị:</span>
+                  {[24, 48, 96, 200].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => {
+                        setMediaLimit(num);
+                        setMediaPage(1);
+                        loadMediaList(1, searchTag, listFormatFilter, num);
+                      }}
+                      className={`px-2 py-1 rounded-md text-xs font-medium transition ${
+                        mediaLimit === num
+                          ? "bg-neutral-800 text-white border border-neutral-600 font-bold"
+                          : "text-neutral-500 hover:text-neutral-300"
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <span className="text-xs text-neutral-400">Tổng cộng: {mediaTotal} bài</span>
+              {/* Hàng tìm kiếm theo Tag & Thống kê */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-800/80">
+                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                  <input
+                    type="text"
+                    placeholder="Lọc theo tag (ví dụ: cosplay, funny...)"
+                    value={searchTag}
+                    onChange={(e) => {
+                      setSearchTag(e.target.value);
+                      setMediaPage(1);
+                    }}
+                    className="w-full pl-9 pr-8 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
+                  />
+                  {searchTag && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTag("");
+                        setMediaPage(1);
+                        loadMediaList(1, "", listFormatFilter, mediaLimit);
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="text-xs text-neutral-400 flex items-center gap-3">
+                  <span>
+                    Tổng cộng: <strong className="text-white">{mediaTotal}</strong> bài
+                  </span>
+                  {mediaTotalPages > 1 && (
+                    <span className="text-neutral-500">
+                      (Trang {mediaPage} / {mediaTotalPages})
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
+            {/* Thanh công cụ Chọn & Thao tác hàng loạt */}
+            <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAllOnCurrentPage}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition flex items-center gap-1.5 active:scale-95"
+                >
+                  {mediaList.length > 0 &&
+                  mediaList.every((item) => selectedMediaIds.includes(item.id)) ? (
+                    <>
+                      <CheckSquare className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Bỏ chọn trang này</span>
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>Chọn tất cả trang này</span>
+                    </>
+                  )}
+                </button>
+
+                {selectedMediaIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeselectAllListMedia}
+                    className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-400 hover:text-white font-medium transition active:scale-95"
+                  >
+                    Bỏ chọn tất cả ({selectedMediaIds.length})
+                  </button>
+                )}
+              </div>
+
+              {/* Các nút hành động khi đã chọn media */}
+              {selectedMediaIds.length > 0 && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="text-xs text-blue-400 font-semibold px-2">
+                    Đã chọn {selectedMediaIds.length} mục
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkTagInput("");
+                      setShowBulkTagModal(true);
+                    }}
+                    disabled={isBulkTagging}
+                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-95 text-xs text-white font-semibold transition flex items-center gap-1.5 shadow-md shadow-blue-600/20"
+                  >
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>Gán nhãn hàng loạt</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    disabled={isBulkDeleting}
+                    className="px-3.5 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-500 active:scale-95 text-xs text-white font-semibold transition flex items-center gap-1.5 shadow-md shadow-red-600/20"
+                  >
+                    {isBulkDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>Xoá ({selectedMediaIds.length})</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Danh sách Media Grid */}
             {loadingList ? (
-              <div className="py-20 flex items-center justify-center text-neutral-500">
-                <Loader2 className="w-6 h-6 animate-spin" />
+              <div className="py-24 flex flex-col items-center justify-center text-neutral-500 gap-2">
+                <Loader2 className="w-7 h-7 animate-spin text-blue-500" />
+                <span className="text-xs text-neutral-400">Đang tải danh sách media...</span>
               </div>
             ) : mediaList.length === 0 ? (
-              <div className="py-16 text-center text-neutral-500 bg-neutral-900 border border-neutral-800 rounded-xl">
-                Chưa có media nào. Hãy thêm link hoặc tải file lên.
+              <div className="py-16 text-center text-neutral-500 bg-neutral-900 border border-neutral-800 rounded-xl space-y-2">
+                <p className="text-sm">Không tìm thấy media nào phù hợp với bộ lọc.</p>
+                {searchTag && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTag("");
+                      setMediaPage(1);
+                      loadMediaList(1, "", listFormatFilter, mediaLimit);
+                    }}
+                    className="text-xs text-blue-400 underline hover:text-blue-300"
+                  >
+                    Xóa từ khóa lọc tag
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {mediaList.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden flex flex-col group"
-                  >
-                    {/* Media Preview Box */}
-                    <div className="relative aspect-[9/16] max-h-60 bg-black flex items-center justify-center overflow-hidden">
-                      {item.type === "VIDEO" ? (
-                        <video
-                          src={item.mediaUrl}
-                          className="w-full h-full object-contain"
-                          style={{ transform: `rotate(${item.defaultRotate}deg)` }}
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            if (!target.src.includes("/api/proxy")) {
-                              target.src = `/api/proxy?url=${encodeURIComponent(item.mediaUrl)}`;
-                              target.load();
-                            }
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {mediaList.map((item) => {
+                  const isSelected = selectedMediaIds.includes(item.id);
+                  const isGallery = item.galleryUrls && item.galleryUrls.length > 1;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`bg-neutral-900 border rounded-xl overflow-hidden flex flex-col group transition-all duration-200 ${
+                        isSelected
+                          ? "border-blue-500 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/10"
+                          : "border-neutral-800 hover:border-neutral-700"
+                      }`}
+                    >
+                      {/* Media Preview Box */}
+                      <div className="relative aspect-[9/16] max-h-64 bg-black flex items-center justify-center overflow-hidden">
+                        {/* Checkbox chọn mục */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSelectMedia(item.id);
                           }}
-                        />
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.mediaUrl}
-                          alt={item.title || "media"}
-                          referrerPolicy="no-referrer"
-                          className="max-w-full max-h-full w-auto h-auto object-contain select-none"
-                        />
-                      )}
-
-                      {/* Badge Type & Source */}
-                      <div className="absolute top-2 left-2 flex gap-1.5 z-10 flex-wrap">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-black/60 text-white backdrop-blur-md">
-                          {item.type}
-                        </span>
-                        {item.galleryUrls && item.galleryUrls.length > 1 && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-600/80 text-white backdrop-blur-md flex items-center gap-1">
-                            <Layers className="w-3 h-3" />
-                            <span>Album ({item.galleryUrls.length})</span>
-                          </span>
-                        )}
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-600/70 text-white backdrop-blur-md">
-                          {item.sourceType}
-                        </span>
-                      </div>
-
-                      {/* Storage Badge */}
-                      <div className="absolute top-2 right-2 z-10">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold backdrop-blur-md ${
-                            item.storageMode === "LOCAL_STORAGE"
-                              ? "bg-green-600/80 text-white"
-                              : "bg-neutral-700/80 text-neutral-300"
-                          }`}
+                          className="absolute top-2 left-2 z-20 cursor-pointer"
+                          title={isSelected ? "Bỏ chọn" : "Chọn media này"}
                         >
-                          {item.storageMode === "LOCAL_STORAGE" ? "LOCAL" : "DIRECT"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Metadata & Actions */}
-                    <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                      <div className="space-y-1">
-                        <div className="text-xs text-neutral-300 line-clamp-2 leading-relaxed">
-                          {renderAdminTextWithLinks(item.title) || (
-                            <span className="text-neutral-500 italic">Không có tiêu đề</span>
-                          )}
+                          <div
+                            className={`w-6 h-6 rounded-md flex items-center justify-center transition shadow-md ${
+                              isSelected
+                                ? "bg-blue-600 text-white ring-2 ring-blue-400 scale-105"
+                                : "bg-black/60 border border-white/50 text-transparent hover:border-white hover:bg-black/80"
+                            }`}
+                          >
+                            <Check className="w-4 h-4 stroke-[3]" />
+                          </div>
                         </div>
-                        {editingTagsId === item.id ? (
-                          <div className="space-y-1.5 pt-1">
-                            <input
-                              type="text"
-                              value={editingTagsInput}
-                              onChange={(e) => setEditingTagsInput(e.target.value)}
-                              placeholder="tag1, tag2, tag3..."
-                              className="w-full px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-xs text-white focus:outline-none focus:border-blue-500"
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") handleSaveTags(item.id);
-                                if (e.key === "Escape") setEditingTagsId(null);
-                              }}
-                              autoFocus
-                            />
-                            {renderTagSelector(editingTagsInput, setEditingTagsInput)}
-                            <div className="flex gap-1.5 justify-end">
+
+                        {item.type === "VIDEO" ? (
+                          <video
+                            src={item.mediaUrl}
+                            className="w-full h-full object-contain"
+                            style={{ transform: `rotate(${item.defaultRotate}deg)` }}
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              if (!target.src.includes("/api/proxy")) {
+                                target.src = `/api/proxy?url=${encodeURIComponent(item.mediaUrl)}`;
+                                target.load();
+                              }
+                            }}
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.mediaUrl}
+                            alt={item.title || "media"}
+                            referrerPolicy="no-referrer"
+                            className="max-w-full max-h-full w-auto h-auto object-contain select-none"
+                          />
+                        )}
+
+                        {/* Badges định dạng (Type, Album, Source) */}
+                        <div className="absolute top-2 left-10 flex gap-1.5 z-10 flex-wrap">
+                          {isGallery ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-pink-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow">
+                              <Layers className="w-3 h-3" />
+                              <span>Album ({item.galleryUrls.length})</span>
+                            </span>
+                          ) : item.type === "VIDEO" ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow">
+                              <Film className="w-3 h-3" />
+                              <span>Video</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow">
+                              <ImageIcon className="w-3 h-3" />
+                              <span>Ảnh đơn</span>
+                            </span>
+                          )}
+
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-800/90 text-neutral-300 backdrop-blur-md">
+                            {item.sourceType}
+                          </span>
+                        </div>
+
+                        {/* Storage Badge */}
+                        <div className="absolute top-2 right-2 z-10">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold backdrop-blur-md ${
+                              item.storageMode === "LOCAL_STORAGE"
+                                ? "bg-green-600/80 text-white"
+                                : "bg-neutral-700/80 text-neutral-300"
+                            }`}
+                          >
+                            {item.storageMode === "LOCAL_STORAGE" ? "LOCAL" : "DIRECT"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Metadata & Actions */}
+                      <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                        <div className="space-y-1">
+                          <div className="text-xs text-neutral-300 line-clamp-2 leading-relaxed">
+                            {renderAdminTextWithLinks(item.title) || (
+                              <span className="text-neutral-500 italic">Không có tiêu đề</span>
+                            )}
+                          </div>
+
+                          {editingTagsId === item.id ? (
+                            <div className="space-y-1.5 pt-1">
+                              <input
+                                type="text"
+                                value={editingTagsInput}
+                                onChange={(e) => setEditingTagsInput(e.target.value)}
+                                placeholder="tag1, tag2, tag3..."
+                                className="w-full px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-xs text-white focus:outline-none focus:border-blue-500"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSaveTags(item.id);
+                                  if (e.key === "Escape") setEditingTagsId(null);
+                                }}
+                                autoFocus
+                              />
+                              {renderTagSelector(editingTagsInput, setEditingTagsInput)}
+                              <div className="flex gap-1.5 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveTags(item.id)}
+                                  disabled={isSavingTags}
+                                  className="px-2 py-0.5 rounded bg-green-600 hover:bg-green-500 text-white text-[11px] font-medium flex items-center gap-1"
+                                >
+                                  {isSavingTags ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3 h-3" />
+                                  )}
+                                  <span>Lưu tag</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingTagsId(null)}
+                                  className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px]"
+                                >
+                                  Hủy
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {item.tags.length > 0 ? (
+                                item.tags.map((t: string) => (
+                                  <span
+                                    key={t}
+                                    className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-800 text-neutral-400"
+                                  >
+                                    #{t}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[11px] text-neutral-600 italic">Chưa gắn tag</span>
+                              )}
                               <button
-                                onClick={() => handleSaveTags(item.id)}
-                                disabled={isSavingTags}
-                                className="px-2 py-0.5 rounded bg-green-600 hover:bg-green-500 text-white text-[11px] font-medium flex items-center gap-1"
+                                type="button"
+                                onClick={() => handleStartEditTags(item)}
+                                title="Chỉnh sửa hoặc thêm tag"
+                                className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-blue-400 transition ml-auto flex items-center gap-1 text-[11px]"
                               >
-                                {isSavingTags ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <Check className="w-3 h-3" />
-                                )}
-                                <span>Lưu tag</span>
-                              </button>
-                              <button
-                                onClick={() => setEditingTagsId(null)}
-                                className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px]"
-                              >
-                                Hủy
+                                <Pencil className="w-3 h-3" />
+                                <span>Sửa tag</span>
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-1">
-                            {item.tags.length > 0 ? (
-                              item.tags.map((t: string) => (
-                                <span
-                                  key={t}
-                                  className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-800 text-neutral-400"
-                                >
-                                  #{t}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-[11px] text-neutral-600 italic">Chưa gắn tag</span>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                          {item.type === "VIDEO" && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleRotate(item.id, item.defaultRotate)}
+                              title="Xoay 90° mặc định"
+                              className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition text-xs flex items-center gap-1"
+                            >
+                              <RotateCw className="w-3.5 h-3.5" />
+                              <span>{item.defaultRotate}°</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMedia(item.id)}
+                            title="Xoá media"
+                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-neutral-400 hover:text-red-400 transition ml-auto"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Thanh điều hướng phân trang (Pagination) */}
+            {mediaTotalPages > 1 && (
+              <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 mt-6">
+                <div className="text-xs text-neutral-400">
+                  Hiển thị{" "}
+                  <strong className="text-white">
+                    {(mediaPage - 1) * mediaLimit + 1} -{" "}
+                    {Math.min(mediaPage * mediaLimit, mediaTotal)}
+                  </strong>{" "}
+                  trên tổng số <strong className="text-white">{mediaTotal}</strong> bài
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {/* Trang đầu */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMediaPage(1);
+                      loadMediaList(1, searchTag, listFormatFilter, mediaLimit);
+                    }}
+                    disabled={mediaPage <= 1 || loadingList}
+                    title="Về trang đầu"
+                    className="p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-neutral-300 transition"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </button>
+
+                  {/* Trang trước */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prevPage = Math.max(1, mediaPage - 1);
+                      setMediaPage(prevPage);
+                      loadMediaList(prevPage, searchTag, listFormatFilter, mediaLimit);
+                    }}
+                    disabled={mediaPage <= 1 || loadingList}
+                    title="Trang trước"
+                    className="p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-neutral-300 transition flex items-center gap-1 text-xs"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span className="hidden sm:inline">Trước</span>
+                  </button>
+
+                  {/* Các số trang xung quanh */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: mediaTotalPages }, (_, i) => i + 1)
+                      .filter((p) => {
+                        if (mediaTotalPages <= 7) return true;
+                        if (p === 1 || p === mediaTotalPages) return true;
+                        return Math.abs(p - mediaPage) <= 2;
+                      })
+                      .map((p, idx, arr) => {
+                        const prev = arr[idx - 1];
+                        const showEllipsis = prev && p - prev > 1;
+
+                        return (
+                          <div key={p} className="flex items-center">
+                            {showEllipsis && (
+                              <span className="px-1 text-xs text-neutral-600">...</span>
                             )}
                             <button
-                              onClick={() => handleStartEditTags(item)}
-                              title="Chỉnh sửa hoặc thêm tag"
-                              className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-blue-400 transition ml-auto flex items-center gap-1 text-[11px]"
+                              type="button"
+                              onClick={() => {
+                                setMediaPage(p);
+                                loadMediaList(p, searchTag, listFormatFilter, mediaLimit);
+                              }}
+                              disabled={loadingList}
+                              className={`w-8 h-8 rounded-lg text-xs font-semibold transition ${
+                                mediaPage === p
+                                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-bold"
+                                  : "bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700"
+                              }`}
                             >
-                              <Pencil className="w-3 h-3" />
-                              <span>Sửa tag</span>
+                              {p}
                             </button>
                           </div>
-                        )}
+                        );
+                      })}
+                  </div>
+
+                  {/* Trang sau */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextPage = Math.min(mediaTotalPages, mediaPage + 1);
+                      setMediaPage(nextPage);
+                      loadMediaList(nextPage, searchTag, listFormatFilter, mediaLimit);
+                    }}
+                    disabled={mediaPage >= mediaTotalPages || loadingList}
+                    title="Trang sau"
+                    className="p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-neutral-300 transition flex items-center gap-1 text-xs"
+                  >
+                    <span className="hidden sm:inline">Sau</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+
+                  {/* Trang cuối */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMediaPage(mediaTotalPages);
+                      loadMediaList(mediaTotalPages, searchTag, listFormatFilter, mediaLimit);
+                    }}
+                    disabled={mediaPage >= mediaTotalPages || loadingList}
+                    title="Tới trang cuối"
+                    className="p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-neutral-300 transition"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Gán nhãn hàng loạt (Bulk Tag Modal) */}
+            {showBulkTagModal && (
+              <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30">
+                        <Tag className="w-5 h-5" />
                       </div>
+                      <div>
+                        <h3 className="font-bold text-base text-white">Gán nhãn hàng loạt</h3>
+                        <p className="text-xs text-neutral-400">
+                          Áp dụng cho <strong className="text-blue-400">{selectedMediaIds.length}</strong>{" "}
+                          media đã chọn
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkTagModal(false)}
+                      className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
 
-                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
-                        {item.type === "VIDEO" && (
-                          <button
-                            onClick={() => handleToggleRotate(item.id, item.defaultRotate)}
-                            title="Xoay 90° mặc định"
-                            className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition text-xs flex items-center gap-1"
-                          >
-                            <RotateCw className="w-3.5 h-3.5" />
-                            <span>{item.defaultRotate}°</span>
-                          </button>
-                        )}
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                        Nhập các nhãn (tags), cách nhau bởi dấu phẩy
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="anime, cosplay, sexy, 4k..."
+                        value={bulkTagInput}
+                        onChange={(e) => setBulkTagInput(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                        autoFocus
+                      />
+                      {renderTagSelector(bulkTagInput, setBulkTagInput)}
+                    </div>
 
-                        <button
-                          onClick={() => handleDeleteMedia(item.id)}
-                          title="Xoá media"
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-neutral-400 hover:text-red-400 transition ml-auto"
+                    {/* Lựa chọn chế độ gán nhãn */}
+                    <div className="pt-2">
+                      <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                        Phương thức áp dụng
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <label
+                          className={`p-3 rounded-xl border cursor-pointer flex items-start gap-2.5 transition ${
+                            bulkTagMode === "ADD"
+                              ? "bg-blue-600/10 border-blue-500/50 text-white"
+                              : "bg-neutral-800/60 border-neutral-700/60 text-neutral-400 hover:bg-neutral-800"
+                          }`}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                          <input
+                            type="radio"
+                            name="bulkTagMode"
+                            checked={bulkTagMode === "ADD"}
+                            onChange={() => setBulkTagMode("ADD")}
+                            className="mt-0.5 text-blue-600"
+                          />
+                          <div>
+                            <span className="block text-xs font-bold text-white">
+                              Bổ sung thêm nhãn
+                            </span>
+                            <span className="text-[11px] leading-tight text-neutral-400">
+                              Giữ nguyên các tag cũ và thêm các tag mới này vào.
+                            </span>
+                          </div>
+                        </label>
+
+                        <label
+                          className={`p-3 rounded-xl border cursor-pointer flex items-start gap-2.5 transition ${
+                            bulkTagMode === "REPLACE"
+                              ? "bg-amber-600/10 border-amber-500/50 text-white"
+                              : "bg-neutral-800/60 border-neutral-700/60 text-neutral-400 hover:bg-neutral-800"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="bulkTagMode"
+                            checked={bulkTagMode === "REPLACE"}
+                            onChange={() => setBulkTagMode("REPLACE")}
+                            className="mt-0.5 text-amber-500"
+                          />
+                          <div>
+                            <span className="block text-xs font-bold text-amber-300">
+                              Thay thế toàn bộ nhãn
+                            </span>
+                            <span className="text-[11px] leading-tight text-neutral-400">
+                              Xóa hết các tag cũ và chỉ lưu các tag mới này.
+                            </span>
+                          </div>
+                        </label>
                       </div>
                     </div>
                   </div>
-                ))}
+
+                  {/* Footer buttons */}
+                  <div className="pt-3 border-t border-neutral-800 flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkTagModal(false)}
+                      disabled={isBulkTagging}
+                      className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300 font-medium transition"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkAssignTags}
+                      disabled={isBulkTagging}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-xs text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-blue-600/20"
+                    >
+                      {isBulkTagging ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      <span>Xác nhận gán nhãn</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
