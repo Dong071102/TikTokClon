@@ -300,8 +300,8 @@ export default function TikTokFeed() {
 
   return (
     <div className="relative w-full h-[100dvh] bg-black text-white overflow-hidden select-none">
-      {/* Top Bar Tối Giản: Huy hiệu bộ lọc đang bật (nếu có) + 1 Nút Menu duy nhất */}
-      <header className="absolute top-0 left-0 right-0 p-3 sm:p-4 z-40 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent pointer-events-none gap-2">
+      {/* Top Bar Tối Giản: Huy hiệu bộ lọc đang bật (nếu có) + 1 Nút Menu duy nhất (hoàn toàn trong suốt không lớp phủ đen) */}
+      <header className="absolute top-0 left-0 right-0 p-3 sm:p-4 z-40 flex items-center justify-between pointer-events-none gap-2">
         {/* Vùng hiển thị tag / bộ lọc đang kích hoạt để người dùng nắm rõ */}
         <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto flex-wrap">
           {activeTag && (

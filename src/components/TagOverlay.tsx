@@ -47,14 +47,14 @@ export default function TagOverlay({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="absolute left-0 bottom-0 right-16 p-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none z-20 flex flex-col justify-end max-w-xl">
+    <div className="absolute left-0 bottom-0 right-16 p-3 sm:p-4 pb-4 sm:pb-5 pointer-events-none z-20 flex flex-col justify-end max-w-xl">
       {/* Tiêu đề & Hyperlinks nếu có */}
       {title && (
-        <div className="text-white text-xs sm:text-sm font-medium mb-2 drop-shadow-md pointer-events-auto leading-relaxed">
+        <div className="text-white text-xs sm:text-sm font-medium mb-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] pointer-events-auto leading-relaxed">
           <div
             className={
               isExpanded
-                ? "whitespace-pre-line max-h-48 overflow-y-auto no-scrollbar bg-black/40 p-2 rounded-xl backdrop-blur-sm border border-white/10"
+                ? "whitespace-pre-line max-h-48 overflow-y-auto no-scrollbar bg-black/60 p-2.5 rounded-xl backdrop-blur-md border border-white/15"
                 : "line-clamp-2"
             }
           >
@@ -67,7 +67,7 @@ export default function TagOverlay({
                 e.stopPropagation();
                 setIsExpanded((prev) => !prev);
               }}
-              className="text-neutral-300 hover:text-white text-[11px] font-semibold mt-1 underline underline-offset-2 inline-block bg-black/30 px-1.5 py-0.5 rounded"
+              className="text-neutral-200 hover:text-white text-[11px] font-semibold mt-1 underline underline-offset-2 inline-block bg-black/50 px-2 py-0.5 rounded backdrop-blur-sm border border-white/10"
             >
               {isExpanded ? "Thu gọn ▲" : "Xem thêm ▼"}
             </button>
@@ -84,7 +84,7 @@ export default function TagOverlay({
             className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md transition shadow ${
               activeTag?.toLowerCase() === tag.toLowerCase()
                 ? "bg-white text-black font-bold scale-105"
-                : "bg-white/20 text-white hover:bg-white/30"
+                : "bg-black/50 text-white hover:bg-black/70 border border-white/20"
             }`}
           >
             #{tag}
@@ -95,7 +95,7 @@ export default function TagOverlay({
         <button
           onClick={onOpenTagDrawer}
           title="Xem tất cả tag"
-          className="p-1.5 rounded-full bg-white/10 hover:bg-white/25 text-white/80 hover:text-white backdrop-blur-md transition"
+          className="p-1.5 rounded-full bg-black/50 hover:bg-black/70 text-white/80 hover:text-white backdrop-blur-md border border-white/20 transition shadow"
         >
           <TagIcon className="w-3.5 h-3.5" />
         </button>
