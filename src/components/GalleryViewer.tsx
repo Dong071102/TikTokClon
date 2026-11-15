@@ -120,8 +120,8 @@ export default function GalleryViewer({
         </button>
       )}
 
-      {/* Các chấm chỉ vị trí ảnh ở chân màn hình (Dots indicator) */}
-      <div className="absolute bottom-3 left-0 right-0 z-30 flex items-center justify-center gap-1.5 pointer-events-none">
+      {/* Các chấm chỉ vị trí ảnh ở chân màn hình (Dots indicator) - nâng cao hơn 0.5cm tránh cấn thanh vuốt Home */}
+      <div className="absolute bottom-5 sm:bottom-6 left-0 right-0 z-30 flex items-center justify-center gap-1.5 pointer-events-none">
         {images.map((_, idx) => (
           <div
             key={idx}
