@@ -421,9 +421,9 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-neutral-950 text-white flex flex-col">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-neutral-950 text-white flex flex-col overflow-hidden select-none">
       {/* Top Header */}
-      <header className="border-b border-neutral-800 bg-neutral-900/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
+      <header className="shrink-0 border-b border-neutral-800 bg-neutral-900/90 backdrop-blur-md z-30 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400">
             <PlaySquare className="w-5 h-5" />
@@ -453,11 +453,11 @@ export default function AdminDashboardPage() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="border-b border-neutral-800 bg-neutral-900 px-4 flex gap-6 text-sm font-medium">
+      {/* Navigation Tabs (Cho phép cuộn ngang mượt mà trên điện thoại hẹp) */}
+      <div className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 flex gap-6 text-sm font-medium overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("link")}
-          className={`py-3.5 flex items-center gap-2 border-b-2 transition ${
+          className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "link"
               ? "border-blue-500 text-blue-400 font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
@@ -469,7 +469,7 @@ export default function AdminDashboardPage() {
 
         <button
           onClick={() => setActiveTab("upload")}
-          className={`py-3.5 flex items-center gap-2 border-b-2 transition ${
+          className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "upload"
               ? "border-blue-500 text-blue-400 font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
@@ -481,7 +481,7 @@ export default function AdminDashboardPage() {
 
         <button
           onClick={() => setActiveTab("list")}
-          className={`py-3.5 flex items-center gap-2 border-b-2 transition ${
+          className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "list"
               ? "border-blue-500 text-blue-400 font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
@@ -492,8 +492,8 @@ export default function AdminDashboardPage() {
         </button>
       </div>
 
-      {/* Main Tab Content */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 overflow-y-auto">
+      {/* Main Tab Content - Cuộn dọc mượt mà trên mọi điện thoại */}
+      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 pb-32 sm:pb-16 overflow-y-auto overscroll-contain select-text">
         {/* TAB 1: THÊM TỪ LINK */}
         {activeTab === "link" && (
           <div className="space-y-6">
