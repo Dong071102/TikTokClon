@@ -18,6 +18,7 @@ import {
   Search,
   HardDrive,
   Globe,
+  Pencil,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -52,6 +53,9 @@ export default function AdminDashboardPage() {
   const [mediaPage, setMediaPage] = useState(1);
   const [loadingList, setLoadingList] = useState(false);
   const [searchTag, setSearchTag] = useState("");
+  const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
+  const [editingTagsInput, setEditingTagsInput] = useState<string>("");
+  const [isSavingTags, setIsSavingTags] = useState(false);
 
   // Kiểm tra auth
   useEffect(() => {
@@ -247,6 +251,40 @@ export default function AdminDashboardPage() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Bắt đầu sửa tags cho media
+  const handleStartEditTags = (item: any) => {
+    setEditingTagsId(item.id);
+    setEditingTagsInput(item.tags.join(", "));
+  };
+
+  // Lưu tags sau khi chỉnh sửa
+  const handleSaveTags = async (id: string) => {
+    setIsSavingTags(true);
+    try {
+      const splitTags = editingTagsInput
+        .split(/[,;\s]+/)
+        .map((t) => t.trim().replace(/^#/, ""))
+        .filter(Boolean);
+
+      const res = await fetch(`/api/admin/media/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: splitTags }),
+      });
+
+      if (res.ok) {
+        setMediaList((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, tags: splitTags } : m))
+        );
+        setEditingTagsId(null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingTags(false);
     }
   };
 
@@ -713,16 +751,65 @@ export default function AdminDashboardPage() {
                         <p className="text-xs text-neutral-300 line-clamp-1">
                           {item.title || "Không có tiêu đề"}
                         </p>
-                        <div className="flex flex-wrap gap-1">
-                          {item.tags.map((t: string) => (
-                            <span
-                              key={t}
-                              className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-800 text-neutral-400"
+                        {editingTagsId === item.id ? (
+                          <div className="space-y-1.5 pt-1">
+                            <input
+                              type="text"
+                              value={editingTagsInput}
+                              onChange={(e) => setEditingTagsInput(e.target.value)}
+                              placeholder="tag1, tag2, tag3..."
+                              className="w-full px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-xs text-white focus:outline-none focus:border-blue-500"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveTags(item.id);
+                                if (e.key === "Escape") setEditingTagsId(null);
+                              }}
+                              autoFocus
+                            />
+                            <div className="flex gap-1.5 justify-end">
+                              <button
+                                onClick={() => handleSaveTags(item.id)}
+                                disabled={isSavingTags}
+                                className="px-2 py-0.5 rounded bg-green-600 hover:bg-green-500 text-white text-[11px] font-medium flex items-center gap-1"
+                              >
+                                {isSavingTags ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Check className="w-3 h-3" />
+                                )}
+                                <span>Lưu tag</span>
+                              </button>
+                              <button
+                                onClick={() => setEditingTagsId(null)}
+                                className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px]"
+                              >
+                                Hủy
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {item.tags.length > 0 ? (
+                              item.tags.map((t: string) => (
+                                <span
+                                  key={t}
+                                  className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-800 text-neutral-400"
+                                >
+                                  #{t}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[11px] text-neutral-600 italic">Chưa gắn tag</span>
+                            )}
+                            <button
+                              onClick={() => handleStartEditTags(item)}
+                              title="Chỉnh sửa hoặc thêm tag"
+                              className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-blue-400 transition ml-auto flex items-center gap-1 text-[11px]"
                             >
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
+                              <Pencil className="w-3 h-3" />
+                              <span>Sửa tag</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">

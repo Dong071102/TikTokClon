@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, Volume2, VolumeX, RotateCw, Maximize2, Minimize2 } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, RotateCw, Maximize2, Minimize2, Heart } from "lucide-react";
 
 interface VideoPlayerProps {
   src: string;
@@ -10,6 +10,8 @@ interface VideoPlayerProps {
   toggleMute: () => void;
   defaultRotate?: number;
   isLandscape?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 export default function VideoPlayer({
@@ -18,6 +20,8 @@ export default function VideoPlayer({
   isMuted,
   toggleMute,
   defaultRotate = 0,
+  isFavorite = false,
+  onToggleFavorite,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -135,6 +139,24 @@ export default function VideoPlayer({
 
       {/* Nút hành động nhanh phía bên phải */}
       <div className="absolute right-3 bottom-24 flex flex-col gap-4 z-30">
+        {/* Nút Yêu thích (Heart) */}
+        {onToggleFavorite && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite();
+            }}
+            title={isFavorite ? "Bỏ yêu thích" : "Yêu thích"}
+            className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+          >
+            <Heart
+              className={`w-6 h-6 transition ${
+                isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-white"
+              }`}
+            />
+          </button>
+        )}
+
         {/* Nút xoay video */}
         <button
           onClick={handleRotate}

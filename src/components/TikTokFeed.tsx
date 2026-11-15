@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import VideoPlayer from "./VideoPlayer";
 import ImageViewer from "./ImageViewer";
 import TagOverlay from "./TagOverlay";
-import { Tag as TagIcon, X, Loader2, RefreshCw, Lock } from "lucide-react";
+import { Tag as TagIcon, X, Loader2, Lock, Heart } from "lucide-react";
 import Link from "next/link";
 
 interface MediaItem {
@@ -30,6 +30,8 @@ export default function TikTokFeed() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [allTags, setAllTags] = useState<TagItem[]>([]);
@@ -38,14 +40,55 @@ export default function TikTokFeed() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Đọc danh sách Yêu thích từ LocalStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("tiktok_clone_favorites");
+      if (stored) {
+        setFavorites(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  // Chuyển đổi Yêu thích (Favorite / Bookmark)
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
+      try {
+        localStorage.setItem("tiktok_clone_favorites", JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+  };
+
   // Tải danh sách media
   const loadMedia = useCallback(
-    async (tag: string | null = null, cursor: string | null = null, append = false) => {
+    async (
+      tag: string | null = null,
+      favOnly = false,
+      favList: string[] = [],
+      cursor: string | null = null,
+      append = false
+    ) => {
+      // Nếu lọc mục yêu thích mà danh sách rỗng
+      if (favOnly && favList.length === 0) {
+        setItems([]);
+        setNextCursor(null);
+        return;
+      }
+
       setIsLoading(true);
       try {
         const params = new URLSearchParams();
-        params.set("limit", "10");
+        params.set("limit", "15");
         if (tag) params.set("tag", tag);
+        if (favOnly && favList.length > 0) {
+          params.set("ids", favList.join(","));
+        }
         if (cursor) params.set("cursor", cursor);
 
         const res = await fetch(`/api/feed?${params.toString()}`);
@@ -85,9 +128,9 @@ export default function TikTokFeed() {
   };
 
   useEffect(() => {
-    loadMedia(activeTag);
+    loadMedia(activeTag, showFavoritesOnly, favorites);
     loadTags();
-  }, [activeTag, loadMedia]);
+  }, [activeTag, showFavoritesOnly, favorites, loadMedia]);
 
   // Intersection Observer để xác định bài viết đang hiển thị trên màn hình
   useEffect(() => {
@@ -104,7 +147,7 @@ export default function TikTokFeed() {
 
               // Tải thêm trang tiếp theo khi gần chạm đáy
               if (index >= items.length - 3 && nextCursor && !isLoading) {
-                loadMedia(activeTag, nextCursor, true);
+                loadMedia(activeTag, showFavoritesOnly, favorites, nextCursor, true);
               }
             }
           }
@@ -121,7 +164,7 @@ export default function TikTokFeed() {
     });
 
     return () => observer.disconnect();
-  }, [items, nextCursor, isLoading, activeTag, loadMedia]);
+  }, [items, nextCursor, isLoading, activeTag, showFavoritesOnly, favorites, loadMedia]);
 
   // Phím tắt bàn phím (Mũi tên lên/xuống, phím M mute)
   useEffect(() => {
@@ -145,28 +188,49 @@ export default function TikTokFeed() {
 
   return (
     <div className="relative w-full h-[100dvh] bg-black text-white overflow-hidden select-none">
-      {/* Top Bar: Bộ lọc Tag & Nút mở Admin */}
+      {/* Top Bar: Bộ lọc Tag, Nút Yêu thích & Nút mở Admin */}
       <header className="absolute top-0 left-0 right-0 p-4 z-40 flex items-center justify-between bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none">
         <div className="flex items-center gap-2 pointer-events-auto">
-          {activeTag ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-white text-sm font-semibold border border-white/20">
+          {/* Tag filter badge */}
+          {activeTag && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-white text-xs sm:text-sm font-semibold border border-white/20">
               <span>#{activeTag}</span>
               <button
                 onClick={() => setActiveTag(null)}
                 className="hover:bg-white/20 rounded-full p-0.5"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setIsTagDrawerOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-sm font-medium transition border border-white/15"
-            >
-              <TagIcon className="w-4 h-4" />
-              <span>Chủ đề</span>
-            </button>
           )}
+
+          {/* Nút mở danh sách chủ đề */}
+          <button
+            onClick={() => setIsTagDrawerOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs sm:text-sm font-medium transition border border-white/15"
+          >
+            <TagIcon className="w-3.5 h-3.5" />
+            <span>Chủ đề</span>
+          </button>
+
+          {/* Nút Mục Yêu Thích */}
+          <button
+            onClick={() => {
+              setShowFavoritesOnly((prev) => !prev);
+              setActiveTag(null);
+            }}
+            title="Lọc các bài viết đã yêu thích"
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full backdrop-blur-md text-xs sm:text-sm font-semibold transition border ${
+              showFavoritesOnly
+                ? "bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/30"
+                : "bg-white/10 hover:bg-white/20 border-white/15 text-white"
+            }`}
+          >
+            <Heart
+              className={`w-3.5 h-3.5 ${showFavoritesOnly ? "fill-white" : "text-red-400"}`}
+            />
+            <span>Yêu thích ({favorites.length})</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-2 pointer-events-auto">
@@ -187,16 +251,36 @@ export default function TikTokFeed() {
       >
         {items.length === 0 && !isLoading && (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-white/70">
-            <p className="text-lg font-medium mb-2">Chưa có bài viết hoặc video nào.</p>
-            <p className="text-sm text-white/40 mb-4">
-              Vui lòng vào trang quản trị để thêm link từ X hoặc tải lên video/ảnh.
-            </p>
-            <Link
-              href="/admin"
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-            >
-              Đến trang Admin
-            </Link>
+            {showFavoritesOnly ? (
+              <>
+                <div className="p-4 rounded-full bg-red-500/10 text-red-400 mb-3">
+                  <Heart className="w-10 h-10" />
+                </div>
+                <p className="text-lg font-medium mb-2">Chưa có bài viết yêu thích nào.</p>
+                <p className="text-sm text-white/40 mb-4 max-w-xs">
+                  Hãy nhấn biểu tượng trái tim ❤️ ở bên phải màn hình khi xem để lưu các video/ảnh bạn thích vào đây!
+                </p>
+                <button
+                  onClick={() => setShowFavoritesOnly(false)}
+                  className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white font-medium transition text-sm"
+                >
+                  Xem tất cả bài viết
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium mb-2">Chưa có bài viết hoặc video nào.</p>
+                <p className="text-sm text-white/40 mb-4">
+                  Vui lòng vào trang quản trị để thêm link từ X hoặc tải lên video/ảnh.
+                </p>
+                <Link
+                  href="/admin"
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition text-sm"
+                >
+                  Đến trang Admin
+                </Link>
+              </>
+            )}
           </div>
         )}
 
@@ -217,12 +301,16 @@ export default function TikTokFeed() {
                 toggleMute={() => setIsMuted((prev) => !prev)}
                 defaultRotate={item.defaultRotate}
                 isLandscape={item.isLandscape}
+                isFavorite={favorites.includes(item.id)}
+                onToggleFavorite={() => toggleFavorite(item.id)}
               />
             ) : (
               <ImageViewer
                 src={item.mediaUrl}
                 alt={item.title || "Image"}
                 isActive={idx === activeIndex}
+                isFavorite={favorites.includes(item.id)}
+                onToggleFavorite={() => toggleFavorite(item.id)}
               />
             )}
 
@@ -231,7 +319,10 @@ export default function TikTokFeed() {
               title={item.title}
               tags={item.tags}
               activeTag={activeTag}
-              onSelectTag={(tag) => setActiveTag(tag)}
+              onSelectTag={(tag) => {
+                setShowFavoritesOnly(false);
+                setActiveTag(tag);
+              }}
               onOpenTagDrawer={() => setIsTagDrawerOpen(true)}
             />
           </div>
@@ -271,10 +362,11 @@ export default function TikTokFeed() {
               <button
                 onClick={() => {
                   setActiveTag(null);
+                  setShowFavoritesOnly(false);
                   setIsTagDrawerOpen(false);
                 }}
                 className={`px-3.5 py-1.5 rounded-full text-sm font-semibold transition ${
-                  activeTag === null
+                  activeTag === null && !showFavoritesOnly
                     ? "bg-white text-black font-bold"
                     : "bg-white/10 text-white hover:bg-white/20"
                 }`}
@@ -282,16 +374,33 @@ export default function TikTokFeed() {
                 Tất cả bài viết
               </button>
 
+              <button
+                onClick={() => {
+                  setShowFavoritesOnly(true);
+                  setActiveTag(null);
+                  setIsTagDrawerOpen(false);
+                }}
+                className={`px-3.5 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 transition ${
+                  showFavoritesOnly
+                    ? "bg-red-600 text-white font-bold"
+                    : "bg-white/10 text-white hover:bg-white/20"
+                }`}
+              >
+                <Heart className="w-3.5 h-3.5 fill-current" />
+                <span>Mục yêu thích ({favorites.length})</span>
+              </button>
+
               {allTags.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => {
                     setActiveTag(t.slug);
+                    setShowFavoritesOnly(false);
                     setIsTagDrawerOpen(false);
                   }}
                   className={`px-3.5 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 transition ${
-                    activeTag === t.slug
-                      ? "bg-blue-600 text-white"
+                    activeTag === t.slug && !showFavoritesOnly
+                      ? "bg-blue-600 text-white font-bold"
                       : "bg-white/10 text-white hover:bg-white/20"
                   }`}
                 >

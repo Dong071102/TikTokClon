@@ -2,15 +2,23 @@
 
 import { useRef, useState } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import { Maximize2, Minimize2, ZoomIn, RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, ZoomIn, RotateCcw, Heart } from "lucide-react";
 
 interface ImageViewerProps {
   src: string;
   alt?: string;
   isActive: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }
 
-export default function ImageViewer({ src, alt = "Image", isActive }: ImageViewerProps) {
+export default function ImageViewer({
+  src,
+  alt = "Image",
+  isActive,
+  isFavorite = false,
+  onToggleFavorite,
+}: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -58,6 +66,24 @@ export default function ImageViewer({ src, alt = "Image", isActive }: ImageViewe
 
             {/* Nút điều khiển nhanh cho ảnh */}
             <div className="absolute right-3 bottom-24 flex flex-col gap-4 z-30">
+              {/* Nút Yêu thích (Heart) */}
+              {onToggleFavorite && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite();
+                  }}
+                  title={isFavorite ? "Bỏ yêu thích" : "Yêu thích"}
+                  className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
+                >
+                  <Heart
+                    className={`w-6 h-6 transition ${
+                      isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-white"
+                    }`}
+                  />
+                </button>
+              )}
+
               {/* Nút phóng to nhanh */}
               <button
                 onClick={(e) => {

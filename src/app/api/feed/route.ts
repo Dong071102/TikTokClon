@@ -6,8 +6,13 @@ export async function GET(request: Request) {
   const cursor = searchParams.get("cursor"); // id của item trước đó
   const limit = parseInt(searchParams.get("limit") || "10", 10);
   const tag = searchParams.get("tag");
+  const idsParam = searchParams.get("ids");
 
   const where: any = {};
+  if (idsParam) {
+    const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    where.id = { in: ids };
+  }
   if (tag) {
     where.tags = {
       some: {
