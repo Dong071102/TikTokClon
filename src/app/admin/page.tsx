@@ -22,6 +22,8 @@ import {
   X,
   Plus,
   Layers,
+  Film,
+  Video,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -67,16 +69,35 @@ export default function AdminDashboardPage() {
   const [isSubmittingLink, setIsSubmittingLink] = useState(false);
   const [linkMsg, setLinkMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // States cho Tab Bóc tách Ảnh Web (Gallery / Album)
+  // States cho Tab Bóc tách Media Web (Nhiều trang, Ảnh & Video)
   const [webScrapeUrl, setWebScrapeUrl] = useState("");
   const [isScrapingWeb, setIsScrapingWeb] = useState(false);
   const [scrapedWebTitle, setScrapedWebTitle] = useState("");
-  const [scrapedWebImages, setScrapedWebImages] = useState<string[]>([]);
-  const [selectedWebImages, setSelectedWebImages] = useState<string[]>([]);
+  const [scrapedPages, setScrapedPages] = useState<
+    Array<{
+      url: string;
+      title: string;
+      imageCount: number;
+      videoCount: number;
+      error?: string;
+    }>
+  >([]);
+  const [scrapedMediaItems, setScrapedMediaItems] = useState<
+    Array<{
+      id: string;
+      url: string;
+      type: "IMAGE" | "VIDEO";
+      sourceUrl: string;
+      pageTitle?: string;
+      thumbnailUrl?: string;
+    }>
+  >([]);
+  const [selectedMediaUrls, setSelectedMediaUrls] = useState<string[]>([]);
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<"ALL" | "IMAGE" | "VIDEO">("ALL");
   const [webStorageMode, setWebStorageMode] = useState<"DIRECT_LINK" | "LOCAL_STORAGE">("DIRECT_LINK");
   const [webGalleryTitle, setWebGalleryTitle] = useState("");
   const [webGalleryTags, setWebGalleryTags] = useState("");
-  const [isSubmittingWebGallery, setIsSubmittingWebGallery] = useState(false);
+  const [isSubmittingWebMedia, setIsSubmittingWebMedia] = useState(false);
   const [webScrapeMsg, setWebScrapeMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // States cho Tab 2: Upload File
@@ -207,13 +228,14 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // 1.2 Xử lý Quét & Bóc tách ảnh từ Web (Gallery)
+  // 1.2 Xử lý Quét & Bóc tách Media (Ảnh & Video) từ Web (Hỗ trợ nhiều trang cùng lúc)
   const handleScrapeWeb = async () => {
     if (!webScrapeUrl.trim()) return;
     setIsScrapingWeb(true);
     setWebScrapeMsg(null);
-    setScrapedWebImages([]);
-    setSelectedWebImages([]);
+    setScrapedMediaItems([]);
+    setSelectedMediaUrls([]);
+    setScrapedPages([]);
 
     try {
       const res = await fetch("/api/admin/scrape-web-images", {
@@ -222,16 +244,23 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ url: webScrapeUrl }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Không thể bóc tách ảnh từ trang web");
+      if (!res.ok) throw new Error(json.error || "Không thể bóc tách media từ trang web");
+
+      const items = json.data.items || [];
+      const pages = json.data.pages || [];
+      const totalImages = json.data.totalImages || 0;
+      const totalVideos = json.data.totalVideos || 0;
 
       setScrapedWebTitle(json.data.title || "");
       setWebGalleryTitle(json.data.title || "");
-      setScrapedWebImages(json.data.images || []);
-      // Mặc định chọn tất cả các ảnh tìm thấy
-      setSelectedWebImages(json.data.images || []);
+      setScrapedPages(pages);
+      setScrapedMediaItems(items);
+      // Mặc định chọn tất cả media tìm thấy
+      setSelectedMediaUrls(items.map((m: any) => m.url));
+
       setWebScrapeMsg({
         type: "success",
-        text: `Đã tìm thấy ${json.data.images.length} hình ảnh trên trang web! Hãy chọn các ảnh để tạo Gallery.`,
+        text: `Quét thành công ${pages.length} trang web! Tìm thấy ${totalImages} hình ảnh và ${totalVideos} video. Hãy chọn các media bạn muốn lưu.`,
       });
     } catch (err: any) {
       setWebScrapeMsg({ type: "error", text: err.message });
@@ -240,27 +269,62 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const toggleSelectWebImage = (imgUrl: string) => {
-    setSelectedWebImages((prev) =>
-      prev.includes(imgUrl) ? prev.filter((u) => u !== imgUrl) : [...prev, imgUrl]
+  const toggleSelectMedia = (url: string) => {
+    setSelectedMediaUrls((prev) =>
+      prev.includes(url) ? prev.filter((u) => u !== url) : [...prev, url]
     );
   };
 
-  const handleSelectAllWebImages = () => {
-    setSelectedWebImages([...scrapedWebImages]);
+  const handleSelectAllMedia = () => {
+    if (mediaTypeFilter === "ALL") {
+      setSelectedMediaUrls(scrapedMediaItems.map((m) => m.url));
+    } else {
+      setSelectedMediaUrls((prev) => {
+        const filteredUrls = scrapedMediaItems
+          .filter((m) => m.type === mediaTypeFilter)
+          .map((m) => m.url);
+        return Array.from(new Set([...prev, ...filteredUrls]));
+      });
+    }
   };
 
-  const handleDeselectAllWebImages = () => {
-    setSelectedWebImages([]);
+  const handleDeselectAllMedia = () => {
+    if (mediaTypeFilter === "ALL") {
+      setSelectedMediaUrls([]);
+    } else {
+      const filteredUrls = new Set(
+        scrapedMediaItems
+          .filter((m) => m.type === mediaTypeFilter)
+          .map((m) => m.url)
+      );
+      setSelectedMediaUrls((prev) => prev.filter((u) => !filteredUrls.has(u)));
+    }
   };
 
-  const handleSaveWebGallery = async () => {
-    if (selectedWebImages.length === 0) {
+  const handleSelectOnlyImages = () => {
+    setSelectedMediaUrls(
+      scrapedMediaItems.filter((m) => m.type === "IMAGE").map((m) => m.url)
+    );
+  };
+
+  const handleSelectOnlyVideos = () => {
+    setSelectedMediaUrls(
+      scrapedMediaItems.filter((m) => m.type === "VIDEO").map((m) => m.url)
+    );
+  };
+
+  // Lưu các ảnh đã chọn thành 1 bài viết Gallery Album
+  const handleSaveImagesAsGallery = async () => {
+    const selectedImages = scrapedMediaItems
+      .filter((m) => m.type === "IMAGE" && selectedMediaUrls.includes(m.url))
+      .map((m) => m.url);
+
+    if (selectedImages.length === 0) {
       setWebScrapeMsg({ type: "error", text: "Vui lòng chọn ít nhất 1 hình ảnh để tạo Gallery" });
       return;
     }
 
-    setIsSubmittingWebGallery(true);
+    setIsSubmittingWebMedia(true);
     setWebScrapeMsg(null);
 
     try {
@@ -269,15 +333,17 @@ export default function AdminDashboardPage() {
         .map((t) => t.trim().replace(/^#/, ""))
         .filter(Boolean);
 
+      const firstPageUrl = webScrapeUrl.split(/[\r\n,]+/)[0]?.trim() || null;
+
       const res = await fetch("/api/admin/media", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "IMAGE",
           sourceType: "WEB_SCRAPE",
-          sourceUrl: webScrapeUrl,
-          mediaUrl: selectedWebImages[0],
-          galleryUrls: selectedWebImages,
+          sourceUrl: firstPageUrl,
+          mediaUrl: selectedImages[0],
+          galleryUrls: selectedImages,
           title: webGalleryTitle.trim() || scrapedWebTitle || null,
           storageMode: webStorageMode,
           tags,
@@ -289,14 +355,143 @@ export default function AdminDashboardPage() {
 
       setWebScrapeMsg({
         type: "success",
-        text: `Tạo Gallery thành công với ${selectedWebImages.length} ảnh! Đã lưu vào hệ thống.`,
+        text: `Tạo Gallery thành công với ${selectedImages.length} ảnh! Đã lưu vào hệ thống.`,
       });
       loadMediaList();
       loadExistingTags();
     } catch (err: any) {
       setWebScrapeMsg({ type: "error", text: err.message });
     } finally {
-      setIsSubmittingWebGallery(false);
+      setIsSubmittingWebMedia(false);
+    }
+  };
+
+  // Lưu các video đã chọn thành từng bài viết riêng
+  const handleSaveSelectedVideos = async () => {
+    const selectedVideos = scrapedMediaItems.filter(
+      (m) => m.type === "VIDEO" && selectedMediaUrls.includes(m.url)
+    );
+
+    if (selectedVideos.length === 0) {
+      setWebScrapeMsg({ type: "error", text: "Vui lòng chọn ít nhất 1 video để lưu" });
+      return;
+    }
+
+    setIsSubmittingWebMedia(true);
+    setWebScrapeMsg(null);
+
+    try {
+      const tags = webGalleryTags
+        .split(/[,;\s]+/)
+        .map((t) => t.trim().replace(/^#/, ""))
+        .filter(Boolean);
+
+      const itemsToSave = selectedVideos.map((v) => ({
+        type: "VIDEO",
+        sourceType: "WEB_SCRAPE",
+        sourceUrl: v.sourceUrl,
+        mediaUrl: v.url,
+        thumbnailUrl: v.thumbnailUrl || null,
+        title: webGalleryTitle.trim() || v.pageTitle || scrapedWebTitle || null,
+        storageMode: webStorageMode,
+        tags,
+      }));
+
+      const res = await fetch("/api/admin/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: itemsToSave }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Không thể lưu danh sách video");
+
+      setWebScrapeMsg({
+        type: "success",
+        text: `Đã lưu thành công ${selectedVideos.length} video vào hệ thống!`,
+      });
+      loadMediaList();
+      loadExistingTags();
+    } catch (err: any) {
+      setWebScrapeMsg({ type: "error", text: err.message });
+    } finally {
+      setIsSubmittingWebMedia(false);
+    }
+  };
+
+  // Lưu tất cả đã chọn: Gom các ảnh thành 1 bài Gallery + Lưu từng video thành bài riêng
+  const handleSaveAllSelectedMedia = async () => {
+    const selectedImages = scrapedMediaItems
+      .filter((m) => m.type === "IMAGE" && selectedMediaUrls.includes(m.url))
+      .map((m) => m.url);
+    const selectedVideos = scrapedMediaItems.filter(
+      (m) => m.type === "VIDEO" && selectedMediaUrls.includes(m.url)
+    );
+
+    if (selectedImages.length === 0 && selectedVideos.length === 0) {
+      setWebScrapeMsg({ type: "error", text: "Vui lòng chọn ít nhất 1 ảnh hoặc video để lưu" });
+      return;
+    }
+
+    setIsSubmittingWebMedia(true);
+    setWebScrapeMsg(null);
+
+    try {
+      const tags = webGalleryTags
+        .split(/[,;\s]+/)
+        .map((t) => t.trim().replace(/^#/, ""))
+        .filter(Boolean);
+
+      const itemsToSave: any[] = [];
+      const firstPageUrl = webScrapeUrl.split(/[\r\n,]+/)[0]?.trim() || null;
+
+      // 1. Nếu có ảnh: gom thành 1 bài Gallery
+      if (selectedImages.length > 0) {
+        itemsToSave.push({
+          type: "IMAGE",
+          sourceType: "WEB_SCRAPE",
+          sourceUrl: firstPageUrl,
+          mediaUrl: selectedImages[0],
+          galleryUrls: selectedImages,
+          title: webGalleryTitle.trim() || scrapedWebTitle || null,
+          storageMode: webStorageMode,
+          tags,
+        });
+      }
+
+      // 2. Nếu có video: lưu từng video thành bài viết riêng
+      for (const v of selectedVideos) {
+        itemsToSave.push({
+          type: "VIDEO",
+          sourceType: "WEB_SCRAPE",
+          sourceUrl: v.sourceUrl,
+          mediaUrl: v.url,
+          thumbnailUrl: v.thumbnailUrl || null,
+          title: webGalleryTitle.trim() || v.pageTitle || scrapedWebTitle || null,
+          storageMode: webStorageMode,
+          tags,
+        });
+      }
+
+      const res = await fetch("/api/admin/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: itemsToSave }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Không thể lưu media");
+
+      setWebScrapeMsg({
+        type: "success",
+        text: `Đã lưu thành công ${itemsToSave.length} bài viết (${selectedImages.length} ảnh trong 1 Gallery + ${selectedVideos.length} video riêng) vào hệ thống!`,
+      });
+      loadMediaList();
+      loadExistingTags();
+    } catch (err: any) {
+      setWebScrapeMsg({ type: "error", text: err.message });
+    } finally {
+      setIsSubmittingWebMedia(false);
     }
   };
 
@@ -644,7 +839,7 @@ export default function AdminDashboardPage() {
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>Bóc tách Ảnh Web (Gallery)</span>
+          <span>Bóc tách Web (Ảnh & Video đa trang)</span>
         </button>
 
         <button
@@ -866,239 +1061,421 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB BÓC TÁCH ẢNH WEB (GALLERY / ALBUM) */}
-        {activeTab === "web_images" && (
-          <div className="space-y-6">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-blue-400" />
-                <span>Bóc tách Ảnh từ Web & Tạo Gallery (Album)</span>
-              </h2>
-              <p className="text-xs text-neutral-400 mb-6">
-                Dán link bất kỳ trang web nào (báo, blog, diễn đàn, thư viện ảnh...), hệ thống sẽ tự động quét và bóc tách tất cả hình ảnh. Bạn có thể chọn các ảnh cần thiết để tạo thành một bài viết Gallery lướt ngang.
-              </p>
+        {/* TAB BÓC TÁCH MEDIA WEB (ẢNH & VIDEO ĐA TRANG) */}
+        {activeTab === "web_images" && (() => {
+          const totalImages = scrapedMediaItems.filter((m) => m.type === "IMAGE").length;
+          const totalVideos = scrapedMediaItems.filter((m) => m.type === "VIDEO").length;
+          const selectedImagesCount = scrapedMediaItems.filter(
+            (m) => m.type === "IMAGE" && selectedMediaUrls.includes(m.url)
+          ).length;
+          const selectedVideosCount = scrapedMediaItems.filter(
+            (m) => m.type === "VIDEO" && selectedMediaUrls.includes(m.url)
+          ).length;
 
-              {webScrapeMsg && (
-                <div
-                  className={`p-3.5 rounded-xl text-sm mb-6 flex items-center gap-2 ${
-                    webScrapeMsg.type === "success"
-                      ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                      : "bg-red-500/10 text-red-400 border border-red-500/20"
-                  }`}
-                >
-                  {webScrapeMsg.type === "success" ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                  <span>{webScrapeMsg.text}</span>
-                </div>
-              )}
+          const displayedItems = scrapedMediaItems.filter((item) => {
+            if (mediaTypeFilter === "ALL") return true;
+            return item.type === mediaTypeFilter;
+          });
 
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <input
-                  type="url"
-                  placeholder="Dán link trang web vào đây (ví dụ: https://example.com/gallery, bài viết, blog...)"
-                  value={webScrapeUrl}
-                  onChange={(e) => setWebScrapeUrl(e.target.value)}
-                  className="flex-1 px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none focus:border-blue-500 transition"
-                />
-                <button
-                  type="button"
-                  onClick={handleScrapeWeb}
-                  disabled={isScrapingWeb || !webScrapeUrl.trim()}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 shrink-0"
-                >
-                  {isScrapingWeb ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Đang quét ảnh...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="w-4 h-4" />
-                      <span>Quét ảnh từ Web</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+          return (
+            <div className="space-y-6">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-sm">
+                <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-blue-400" />
+                  <span>Bóc tách Media từ Web (Ảnh & Video đa trang)</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mb-4">
+                  Dán 1 hoặc nhiều link trang web (báo, blog, diễn đàn, gallery, bài viết phân trang...), hệ thống sẽ tự động quét song song và bóc tách tất cả hình ảnh lẫn video. Bạn có thể chọn ảnh để tạo Gallery lướt ngang hoặc lưu video thành bài viết riêng biệt.
+                </p>
 
-            {/* KẾT QUẢ QUÉT ẢNH VÀ CHỌN TẠO GALLERY */}
-            {scrapedWebImages.length > 0 && (
-              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-6 animate-fade-in">
-                {/* Header thanh công cụ chọn ảnh */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800">
-                  <div>
-                    <h3 className="font-bold text-base text-neutral-200 flex items-center gap-2">
-                      <span>Chọn ảnh để đưa vào Gallery</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-blue-600/30 text-blue-400 border border-blue-500/40 text-xs font-semibold">
-                        Đã chọn {selectedWebImages.length} / {scrapedWebImages.length} ảnh
-                      </span>
-                    </h3>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      Nhấn vào từng hình ảnh để chọn hoặc bỏ chọn. Các ảnh được chọn sẽ xuất hiện trong album lướt ngang.
-                    </p>
+                {webScrapeMsg && (
+                  <div
+                    className={`p-3.5 rounded-xl text-sm mb-4 flex items-center gap-2 ${
+                      webScrapeMsg.type === "success"
+                        ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                    }`}
+                  >
+                    {webScrapeMsg.type === "success" ? (
+                      <Check className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                    )}
+                    <span>{webScrapeMsg.text}</span>
                   </div>
+                )}
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleSelectAllWebImages}
-                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition active:scale-95"
-                    >
-                      Chọn tất cả ({scrapedWebImages.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDeselectAllWebImages}
-                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-400 hover:text-white font-medium transition active:scale-95"
-                    >
-                      Bỏ chọn tất cả
-                    </button>
-                  </div>
-                </div>
-
-                {/* Grid các hình ảnh đã tìm thấy */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[500px] overflow-y-auto no-scrollbar p-1">
-                  {scrapedWebImages.map((imgUrl, idx) => {
-                    const isSelected = selectedWebImages.includes(imgUrl);
-                    const selectedIndex = selectedWebImages.indexOf(imgUrl);
-
-                    return (
-                      <div
-                        key={`${imgUrl}-${idx}`}
-                        onClick={() => toggleSelectWebImage(imgUrl)}
-                        className={`group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                          isSelected
-                            ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/20 scale-[0.98]"
-                            : "border-neutral-800 hover:border-neutral-600 opacity-60 hover:opacity-100"
-                        }`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={imgUrl}
-                          alt={`Scraped ${idx + 1}`}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover select-none pointer-events-none"
-                          loading="lazy"
-                        />
-
-                        {/* Checkbox badge ở góc trên phải */}
-                        <div
-                          className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shadow-md transition ${
-                            isSelected
-                              ? "bg-blue-600 text-white scale-100"
-                              : "bg-black/50 border border-white/40 text-transparent scale-90 group-hover:border-white"
-                          }`}
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </div>
-
-                        {/* Thứ tự trong Gallery ở góc trên trái */}
-                        {isSelected && (
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-sm text-[10px] font-bold text-blue-300 border border-blue-400/30">
-                            #{selectedIndex + 1}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Form Thiết lập & Lưu Gallery (Hiển thị khi đã chọn ít nhất 1 ảnh) */}
-                <div className="pt-4 border-t border-neutral-800 space-y-4">
-                  {/* Tiêu đề Gallery */}
+                <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
-                      Tiêu đề bài viết Gallery
+                      Đường dẫn các trang web (Mỗi link 1 dòng)
                     </label>
-                    <input
-                      type="text"
-                      placeholder="Nhập tiêu đề hoặc mô tả cho bộ sưu tập ảnh này..."
-                      value={webGalleryTitle}
-                      onChange={(e) => setWebGalleryTitle(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                    <textarea
+                      rows={3}
+                      placeholder="Dán 1 hoặc nhiều link trang web (mỗi link trên 1 dòng hoặc cách nhau bằng dấu phẩy)&#10;https://example.com/gallery/page-1&#10;https://example.com/gallery/page-2&#10;https://example.com/gallery/page-3"
+                      value={webScrapeUrl}
+                      onChange={(e) => setWebScrapeUrl(e.target.value)}
+                      className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none focus:border-blue-500 transition resize-y font-mono"
                     />
                   </div>
 
-                  {/* Phương án lưu trữ */}
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                      Phương án lưu trữ cho {selectedWebImages.length} ảnh
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setWebStorageMode("DIRECT_LINK")}
-                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition ${
-                          webStorageMode === "DIRECT_LINK"
-                            ? "border-blue-500 bg-blue-500/10 text-white"
-                            : "border-neutral-800 bg-neutral-800 text-neutral-400"
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 font-semibold text-xs text-blue-400">
-                          <Globe className="w-3.5 h-3.5" /> Direct Link (Khuyên dùng)
-                        </span>
-                        <span className="text-[11px] leading-tight opacity-70">
-                          Lưu URL trực tiếp từ trang web gốc, không tốn dung lượng máy chủ.
-                        </span>
-                      </button>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <span className="text-[11px] text-neutral-500">
+                      💡 Hỗ trợ quét đồng thời nhiều trang (multi-page). Tự động phân loại ảnh và video, lọc bỏ ảnh rác.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleScrapeWeb}
+                      disabled={isScrapingWeb || !webScrapeUrl.trim()}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 shrink-0"
+                    >
+                      {isScrapingWeb ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Đang quét các trang...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Globe className="w-4 h-4" />
+                          <span>Bắt đầu quét Media</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
 
+              {/* KẾT QUẢ QUÉT VÀ DANH SÁCH MEDIA */}
+              {scrapedMediaItems.length > 0 && (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-6 animate-fade-in">
+                  {/* Báo cáo phân chia theo từng trang nếu có nhiều trang */}
+                  {scrapedPages.length > 1 && (
+                    <div className="p-3 bg-neutral-800/60 rounded-xl border border-neutral-700/60 space-y-2">
+                      <span className="text-xs font-bold text-neutral-300 block">
+                        Tổng hợp kết quả từ {scrapedPages.length} trang web:
+                      </span>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {scrapedPages.map((page, idx) => (
+                          <div
+                            key={idx}
+                            className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 ${
+                              page.error
+                                ? "bg-red-500/10 border-red-500/30 text-red-300"
+                                : "bg-neutral-700/60 border-neutral-600/60 text-neutral-200"
+                            }`}
+                            title={page.url}
+                          >
+                            <span className="font-bold">Trang {idx + 1}:</span>
+                            {page.error ? (
+                              <span className="text-red-400">Lỗi ({page.error})</span>
+                            ) : (
+                              <span>
+                                {page.imageCount} ảnh, {page.videoCount} video
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Header thanh công cụ & lọc theo loại */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800">
+                    <div>
+                      <h3 className="font-bold text-base text-neutral-200 flex items-center gap-2 flex-wrap">
+                        <span>Danh sách Media tìm thấy</span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-blue-600/30 text-blue-400 border border-blue-500/40 text-xs font-semibold">
+                          Đã chọn: {selectedImagesCount} ảnh, {selectedVideosCount} video
+                        </span>
+                      </h3>
+                      <p className="text-xs text-neutral-400 mt-0.5">
+                        Nhấn vào từng hình ảnh/video để chọn hoặc bỏ chọn.
+                      </p>
+                    </div>
+
+                    {/* Bộ lọc loại Media */}
+                    <div className="flex items-center gap-1.5 bg-neutral-800 p-1 rounded-xl border border-neutral-700 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setWebStorageMode("LOCAL_STORAGE")}
-                        className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition ${
-                          webStorageMode === "LOCAL_STORAGE"
-                            ? "border-green-500 bg-green-500/10 text-white"
-                            : "border-neutral-800 bg-neutral-800 text-neutral-400"
+                        onClick={() => setMediaTypeFilter("ALL")}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                          mediaTypeFilter === "ALL"
+                            ? "bg-blue-600 text-white shadow"
+                            : "text-neutral-400 hover:text-white"
                         }`}
                       >
-                        <span className="flex items-center gap-1.5 font-semibold text-xs text-green-400">
-                          <HardDrive className="w-3.5 h-3.5" /> Tải về Máy chủ
-                        </span>
-                        <span className="text-[11px] leading-tight opacity-70">
-                          Máy chủ tải toàn bộ {selectedWebImages.length} ảnh về thư mục cục bộ vĩnh viễn.
-                        </span>
+                        Tất cả ({scrapedMediaItems.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMediaTypeFilter("IMAGE")}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                          mediaTypeFilter === "IMAGE"
+                            ? "bg-blue-600 text-white shadow"
+                            : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        <span>Ảnh ({totalImages})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMediaTypeFilter("VIDEO")}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                          mediaTypeFilter === "VIDEO"
+                            ? "bg-purple-600 text-white shadow"
+                            : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        <span>Video ({totalVideos})</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Gắn Tags */}
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
-                      Gắn Tags (cách nhau bởi dấu phẩy hoặc khoảng trắng)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="gallery, cosplay, travel, fashion, wallpaper..."
-                      value={webGalleryTags}
-                      onChange={(e) => setWebGalleryTags(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
-                    />
-                    {renderTagSelector(webGalleryTags, setWebGalleryTags)}
+                  {/* Nút thao tác chọn nhanh */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllMedia}
+                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition active:scale-95"
+                    >
+                      Chọn tất cả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllMedia}
+                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-400 hover:text-white font-medium transition active:scale-95"
+                    >
+                      Bỏ chọn tất cả
+                    </button>
+                    {totalImages > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleSelectOnlyImages}
+                        className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-blue-300 hover:text-blue-200 font-medium transition active:scale-95"
+                      >
+                        Chỉ chọn Ảnh ({totalImages})
+                      </button>
+                    )}
+                    {totalVideos > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleSelectOnlyVideos}
+                        className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-purple-300 hover:text-purple-200 font-medium transition active:scale-95"
+                      >
+                        Chỉ chọn Video ({totalVideos})
+                      </button>
+                    )}
                   </div>
 
-                  {/* Nút hành động Lưu Gallery */}
-                  <button
-                    type="button"
-                    onClick={handleSaveWebGallery}
-                    disabled={isSubmittingWebGallery || selectedWebImages.length === 0}
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-98 disabled:opacity-50 text-white font-semibold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
-                  >
-                    {isSubmittingWebGallery ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Đang lưu Gallery ({selectedWebImages.length} ảnh)...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Layers className="w-4 h-4" />
-                        <span>Tạo Gallery ({selectedWebImages.length} ảnh) & Lưu vào Hệ thống</span>
-                      </>
-                    )}
-                  </button>
+                  {/* Grid hiển thị các media items */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[520px] overflow-y-auto no-scrollbar p-1">
+                    {displayedItems.map((item, idx) => {
+                      const isSelected = selectedMediaUrls.includes(item.url);
+                      const selectedIndex = selectedMediaUrls.indexOf(item.url);
+
+                      return (
+                        <div
+                          key={`${item.url}-${idx}`}
+                          onClick={() => toggleSelectMedia(item.url)}
+                          className={`group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer border-2 transition-all bg-neutral-950 flex items-center justify-center ${
+                            isSelected
+                              ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/20 scale-[0.98]"
+                              : "border-neutral-800 hover:border-neutral-600 opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          {item.type === "VIDEO" ? (
+                            <div className="relative w-full h-full flex items-center justify-center bg-black">
+                              {item.thumbnailUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={item.thumbnailUrl}
+                                  alt="Video Poster"
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover select-none pointer-events-none"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <video
+                                  src={item.url}
+                                  muted
+                                  preload="metadata"
+                                  className="w-full h-full object-cover select-none pointer-events-none"
+                                />
+                              )}
+                              {/* Overlay Play Icon */}
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/30">
+                                <div className="p-2 rounded-full bg-black/60 text-white backdrop-blur-sm border border-white/20">
+                                  <Film className="w-5 h-5 text-amber-400" />
+                                </div>
+                              </div>
+                              <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-purple-900/80 border border-purple-500/40 text-[10px] font-bold text-purple-200">
+                                VIDEO
+                              </div>
+                            </div>
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.url}
+                              alt={`Scraped ${idx + 1}`}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover select-none pointer-events-none"
+                              loading="lazy"
+                            />
+                          )}
+
+                          {/* Checkbox badge ở góc trên phải */}
+                          <div
+                            className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shadow-md transition ${
+                              isSelected
+                                ? "bg-blue-600 text-white scale-100"
+                                : "bg-black/50 border border-white/40 text-transparent scale-90 group-hover:border-white"
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </div>
+
+                          {/* Thứ tự trong Gallery ở góc trên trái (nếu là ảnh) */}
+                          {isSelected && item.type === "IMAGE" && (
+                            <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-sm text-[10px] font-bold text-blue-300 border border-blue-400/30">
+                              #{selectedIndex + 1}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Form Thiết lập & Nút Lưu Media */}
+                  <div className="pt-4 border-t border-neutral-800 space-y-4">
+                    {/* Tiêu đề bài viết */}
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                        Tiêu đề / Mô tả bài viết
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Nhập tiêu đề hoặc mô tả cho bài viết / gallery này..."
+                        value={webGalleryTitle}
+                        onChange={(e) => setWebGalleryTitle(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                      />
+                    </div>
+
+                    {/* Phương án lưu trữ */}
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                        Phương án lưu trữ ({selectedImagesCount} ảnh, {selectedVideosCount} video)
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setWebStorageMode("DIRECT_LINK")}
+                          className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition ${
+                            webStorageMode === "DIRECT_LINK"
+                              ? "border-blue-500 bg-blue-500/10 text-white"
+                              : "border-neutral-800 bg-neutral-800 text-neutral-400"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 font-semibold text-xs text-blue-400">
+                            <Globe className="w-3.5 h-3.5" /> Direct Link (Khuyên dùng)
+                          </span>
+                          <span className="text-[11px] leading-tight opacity-70">
+                            Lưu link trực tiếp từ trang web gốc, không tốn dung lượng máy chủ.
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setWebStorageMode("LOCAL_STORAGE")}
+                          className={`p-3 rounded-xl border text-left flex flex-col gap-1 transition ${
+                            webStorageMode === "LOCAL_STORAGE"
+                              ? "border-green-500 bg-green-500/10 text-white"
+                              : "border-neutral-800 bg-neutral-800 text-neutral-400"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 font-semibold text-xs text-green-400">
+                            <HardDrive className="w-3.5 h-3.5" /> Tải về Máy chủ
+                          </span>
+                          <span className="text-[11px] leading-tight opacity-70">
+                            Máy chủ tải media về thư mục cục bộ vĩnh viễn, không lo trang gốc xoá file.
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Gắn Tags */}
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                        Gắn Tags (cách nhau bởi dấu phẩy hoặc khoảng trắng)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="gallery, cosplay, travel, video, wallpaper..."
+                        value={webGalleryTags}
+                        onChange={(e) => setWebGalleryTags(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                      />
+                      {renderTagSelector(webGalleryTags, setWebGalleryTags)}
+                    </div>
+
+                    {/* Nút hành động Lưu Media linh hoạt */}
+                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                      {selectedImagesCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSaveImagesAsGallery}
+                          disabled={isSubmittingWebMedia}
+                          className="flex-1 py-3.5 px-4 bg-blue-600 hover:bg-blue-500 active:scale-98 disabled:opacity-50 text-white font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+                        >
+                          {isSubmittingWebMedia ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Layers className="w-4 h-4" />
+                          )}
+                          <span>Tạo 1 Album Gallery ({selectedImagesCount} ảnh)</span>
+                        </button>
+                      )}
+
+                      {selectedVideosCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSaveSelectedVideos}
+                          disabled={isSubmittingWebMedia}
+                          className="flex-1 py-3.5 px-4 bg-purple-600 hover:bg-purple-500 active:scale-98 disabled:opacity-50 text-white font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-purple-600/20"
+                        >
+                          {isSubmittingWebMedia ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Film className="w-4 h-4" />
+                          )}
+                          <span>Lưu {selectedVideosCount} Video (bài riêng)</span>
+                        </button>
+                      )}
+
+                      {selectedImagesCount > 0 && selectedVideosCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSaveAllSelectedMedia}
+                          disabled={isSubmittingWebMedia}
+                          className="flex-1 py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-98 disabled:opacity-50 text-white font-semibold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                        >
+                          {isSubmittingWebMedia ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Check className="w-4 h-4" />
+                          )}
+                          <span>Lưu tất cả ({selectedImagesCount} ảnh + {selectedVideosCount} video)</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          );
+        })()}
 
         {/* TAB 3: TẢI FILE TRỰC TIẾP */}
         {activeTab === "upload" && (

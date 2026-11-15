@@ -66,6 +66,106 @@ export async function GET(request: Request) {
   }
 }
 
+// Hàm phụ trợ tạo 1 Media Item vào cơ sở dữ liệu
+async function createMediaRecord(data: any) {
+  const {
+    type, // "IMAGE" | "VIDEO"
+    sourceType, // "X_TWITTER" | "TIKTOK" | "INSTAGRAM" | "DIRECT_LINK" | "UPLOAD" | "WEB_SCRAPE"
+    sourceUrl,
+    mediaUrl,
+    galleryUrls = [], // string[] cho Album / Gallery
+    thumbnailUrl,
+    title,
+    storageMode = "DIRECT_LINK", // "DIRECT_LINK" | "LOCAL_STORAGE"
+    tags = [], // string[]
+    isLandscape = false,
+    defaultRotate = 0,
+  } = data;
+
+  const initialMediaUrl =
+    mediaUrl || (Array.isArray(galleryUrls) && galleryUrls.length > 0 ? galleryUrls[0] : null);
+
+  if (!type || !initialMediaUrl) {
+    throw new Error("Thiếu thông tin mediaUrl hoặc galleryUrls hoặc type");
+  }
+
+  let finalMediaUrl = initialMediaUrl;
+  let finalGalleryUrls: string[] = Array.isArray(galleryUrls) ? [...galleryUrls] : [];
+  let localPath: string | null = null;
+
+  // Nếu chọn phương án Tải về máy chủ cục bộ (LOCAL_STORAGE)
+  if (storageMode === "LOCAL_STORAGE") {
+    // 1. Tải ảnh/video đại diện chính
+    if (!finalMediaUrl.startsWith("/uploads/")) {
+      try {
+        const downloaded = await downloadMediaLocally(finalMediaUrl, type);
+        finalMediaUrl = downloaded.localUrl;
+        localPath = downloaded.localPath;
+      } catch (dlErr: any) {
+        console.error("[DOWNLOAD_FAILED_FALLBACK_TO_DIRECT]", dlErr);
+      }
+    }
+
+    // 2. Tải toàn bộ các ảnh trong gallery (nếu có)
+    if (finalGalleryUrls.length > 0) {
+      finalGalleryUrls = await Promise.all(
+        finalGalleryUrls.map(async (imgUrl: string) => {
+          if (imgUrl.startsWith("/uploads/")) return imgUrl;
+          try {
+            const dl = await downloadMediaLocally(imgUrl, "IMAGE");
+            return dl.localUrl;
+          } catch (err) {
+            console.error("[DOWNLOAD_GALLERY_IMG_FAILED]", imgUrl, err);
+            return imgUrl;
+          }
+        })
+      );
+    }
+  }
+
+  // Xử lý Tags
+  const tagNames: string[] = Array.isArray(tags)
+    ? tags.map((t: string) => t.trim().replace(/^#/, "")).filter(Boolean)
+    : [];
+
+  return await prisma.$transaction(async (tx) => {
+    const item = await tx.mediaItem.create({
+      data: {
+        type,
+        sourceType: sourceType || "DIRECT_LINK",
+        sourceUrl: sourceUrl || null,
+        storageMode: storageMode === "LOCAL_STORAGE" ? "LOCAL_STORAGE" : "DIRECT_LINK",
+        mediaUrl: finalMediaUrl,
+        galleryUrls: finalGalleryUrls,
+        localPath,
+        thumbnailUrl: thumbnailUrl || null,
+        title: title || null,
+        isLandscape: Boolean(isLandscape),
+        defaultRotate: Number(defaultRotate) || 0,
+      },
+    });
+
+    // Liên kết Tags
+    for (const tagName of tagNames) {
+      const slug = tagName.toLowerCase().replace(/\s+/g, "-");
+      const tag = await tx.tag.upsert({
+        where: { slug },
+        update: {},
+        create: { name: tagName, slug },
+      });
+
+      await tx.mediaItemTag.create({
+        data: {
+          mediaItemId: item.id,
+          tagId: tag.id,
+        },
+      });
+    }
+
+    return item;
+  });
+}
+
 export async function POST(request: Request) {
   const admin = await getCurrentAdmin();
   if (!admin) {
@@ -74,102 +174,23 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const {
-      type, // "IMAGE" | "VIDEO"
-      sourceType, // "X_TWITTER" | "TIKTOK" | "INSTAGRAM" | "DIRECT_LINK" | "UPLOAD" | "WEB_SCRAPE"
-      sourceUrl,
-      mediaUrl,
-      galleryUrls = [], // string[] cho Album / Gallery
-      thumbnailUrl,
-      title,
-      storageMode = "DIRECT_LINK", // "DIRECT_LINK" | "LOCAL_STORAGE"
-      tags = [], // string[]
-      isLandscape = false,
-      defaultRotate = 0,
-    } = body;
 
-    const initialMediaUrl = mediaUrl || (Array.isArray(galleryUrls) && galleryUrls.length > 0 ? galleryUrls[0] : null);
-
-    if (!type || !initialMediaUrl) {
-      return NextResponse.json({ error: "Thiếu thông tin mediaUrl hoặc galleryUrls hoặc type" }, { status: 400 });
-    }
-
-    let finalMediaUrl = initialMediaUrl;
-    let finalGalleryUrls: string[] = Array.isArray(galleryUrls) ? [...galleryUrls] : [];
-    let localPath: string | null = null;
-
-    // Nếu chọn phương án Tải về máy chủ cục bộ (LOCAL_STORAGE)
-    if (storageMode === "LOCAL_STORAGE") {
-      // 1. Tải ảnh/video đại diện chính
-      if (!finalMediaUrl.startsWith("/uploads/")) {
-        try {
-          const downloaded = await downloadMediaLocally(finalMediaUrl, type);
-          finalMediaUrl = downloaded.localUrl;
-          localPath = downloaded.localPath;
-        } catch (dlErr: any) {
-          console.error("[DOWNLOAD_FAILED_FALLBACK_TO_DIRECT]", dlErr);
-        }
+    // Hỗ trợ lưu hàng loạt (Batch insert) khi truyền mảng items
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      const createdItems = [];
+      for (const itemData of body.items) {
+        const item = await createMediaRecord(itemData);
+        createdItems.push(item);
       }
-
-      // 2. Tải toàn bộ các ảnh trong gallery (nếu có)
-      if (finalGalleryUrls.length > 0) {
-        finalGalleryUrls = await Promise.all(
-          finalGalleryUrls.map(async (imgUrl: string) => {
-            if (imgUrl.startsWith("/uploads/")) return imgUrl;
-            try {
-              const dl = await downloadMediaLocally(imgUrl, "IMAGE");
-              return dl.localUrl;
-            } catch (err) {
-              console.error("[DOWNLOAD_GALLERY_IMG_FAILED]", imgUrl, err);
-              return imgUrl;
-            }
-          })
-        );
-      }
-    }
-
-    // Xử lý Tags
-    const tagNames: string[] = Array.isArray(tags)
-      ? tags.map((t: string) => t.trim().replace(/^#/, "")).filter(Boolean)
-      : [];
-
-    const createdItem = await prisma.$transaction(async (tx) => {
-      const item = await tx.mediaItem.create({
-        data: {
-          type,
-          sourceType: sourceType || "DIRECT_LINK",
-          sourceUrl: sourceUrl || null,
-          storageMode: storageMode === "LOCAL_STORAGE" ? "LOCAL_STORAGE" : "DIRECT_LINK",
-          mediaUrl: finalMediaUrl,
-          galleryUrls: finalGalleryUrls,
-          localPath,
-          thumbnailUrl: thumbnailUrl || null,
-          title: title || null,
-          isLandscape: Boolean(isLandscape),
-          defaultRotate: Number(defaultRotate) || 0,
-        },
+      return NextResponse.json({
+        success: true,
+        count: createdItems.length,
+        items: createdItems,
       });
+    }
 
-      // Liên kết Tags
-      for (const tagName of tagNames) {
-        const slug = tagName.toLowerCase().replace(/\s+/g, "-");
-        const tag = await tx.tag.upsert({
-          where: { slug },
-          update: {},
-          create: { name: tagName, slug },
-        });
-
-        await tx.mediaItemTag.create({
-          data: {
-            mediaItemId: item.id,
-            tagId: tag.id,
-          },
-        });
-      }
-
-      return item;
-    });
-
+    // Lưu 1 item đơn lẻ
+    const createdItem = await createMediaRecord(body);
     return NextResponse.json({ success: true, item: createdItem });
   } catch (err: any) {
     console.error("[CREATE_MEDIA_ERROR]", err);

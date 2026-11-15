@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
-import { scrapeImagesFromWebUrl } from "@/lib/webScraper";
+import { scrapeMultipleWebUrls } from "@/lib/webScraper";
 
 export async function POST(request: Request) {
   const admin = await getCurrentAdmin();
@@ -9,16 +9,36 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { url } = await request.json();
-    if (!url || typeof url !== "string" || !url.trim()) {
-      return NextResponse.json({ error: "Vui lòng nhập đường dẫn URL trang web" }, { status: 400 });
+    const body = await request.json();
+    const { url, urls } = body;
+
+    let targetUrls: string[] = [];
+
+    if (Array.isArray(urls)) {
+      targetUrls = urls.map((u) => String(u).trim()).filter(Boolean);
+    } else if (typeof url === "string" && url.trim()) {
+      // Tách chuỗi theo dấu xuống dòng, dấu phẩy hoặc khoảng trắng
+      targetUrls = url
+        .split(/[\r\n,]+/)
+        .map((u) => u.trim())
+        .filter(Boolean);
     }
 
-    const result = await scrapeImagesFromWebUrl(url);
-
-    if (result.images.length === 0) {
+    if (targetUrls.length === 0) {
       return NextResponse.json(
-        { error: "Không tìm thấy hình ảnh nào phù hợp trên trang web này." },
+        { error: "Vui lòng nhập ít nhất 1 đường dẫn URL trang web" },
+        { status: 400 }
+      );
+    }
+
+    const result = await scrapeMultipleWebUrls(targetUrls);
+
+    if (result.totalFound === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Không tìm thấy hình ảnh hoặc video nào trên các trang web đã nhập. Vui lòng kiểm tra lại link hoặc trang có thể yêu cầu đăng nhập/chặn bot.",
+        },
         { status: 404 }
       );
     }
@@ -28,7 +48,10 @@ export async function POST(request: Request) {
       data: result,
     });
   } catch (err: any) {
-    console.error("[SCRAPE_WEB_IMAGES_ERROR]", err);
-    return NextResponse.json({ error: err.message || "Lỗi khi quét ảnh từ trang web" }, { status: 500 });
+    console.error("[SCRAPE_WEB_MEDIA_ERROR]", err);
+    return NextResponse.json(
+      { error: err.message || "Lỗi khi quét media từ các trang web" },
+      { status: 500 }
+    );
   }
 }
