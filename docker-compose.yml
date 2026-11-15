@@ -8,14 +8,14 @@ services:
     container_name: tiktok-app
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_PORT:-6789}:3000"
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://tiktok:tiktok@192.168.68.5:5432/tiktok?schema=public}
       - JWT_SECRET=${JWT_SECRET:-tiktok_clone_super_secret_jwt_key_2026_0711@}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-vubadong071102@gmail.com}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-0711Vubadong02@}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:6789}
     volumes:
       - tiktok_media_uploads:/app/public/uploads
 
