@@ -19,8 +19,13 @@ import {
   RotateCcw,
   Menu,
   ChevronRight,
+  Film,
+  Layers,
+  Image as ImageIcon,
 } from "lucide-react";
 import Link from "next/link";
+
+export type MediaFormat = "VIDEO" | "GALLERY" | "IMAGE";
 
 interface MediaItem {
   id: string;
@@ -61,6 +66,9 @@ export default function TikTokFeed() {
   const [datePreset, setDatePreset] = useState<"all" | "today" | "7days" | "30days" | "custom">("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+
+  // Bộ lọc Định dạng nội dung (Video / Album / Ảnh đơn)
+  const [selectedFormats, setSelectedFormats] = useState<MediaFormat[]>(["VIDEO", "GALLERY", "IMAGE"]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -113,6 +121,7 @@ export default function TikTokFeed() {
       sort: "random" | "newest" | "oldest" = "random",
       sDate = "",
       eDate = "",
+      formats: MediaFormat[] = ["VIDEO", "GALLERY", "IMAGE"],
       cursor: string | null = null,
       append = false
     ) => {
@@ -133,6 +142,9 @@ export default function TikTokFeed() {
         if (favOnly && favList.length > 0) params.set("ids", favList.join(","));
         if (sDate) params.set("startDate", sDate);
         if (eDate) params.set("endDate", eDate);
+        if (formats.length > 0 && formats.length < 3) {
+          params.set("formats", formats.join(","));
+        }
         if (cursor && cursor !== "random-infinite") params.set("cursor", cursor);
 
         const res = await fetch(`/api/feed?${params.toString()}`);
@@ -177,10 +189,10 @@ export default function TikTokFeed() {
 
   // Tải lại khi thay đổi bộ lọc (LƯU Ý: Không đưa favorites vào dependency để khi thả tim bài viết trong danh sách tổng không bị load lại và mất bài đang xem)
   useEffect(() => {
-    loadMedia(activeTag, showFavoritesOnly, favorites, sortMode, startDate, endDate);
+    loadMedia(activeTag, showFavoritesOnly, favorites, sortMode, startDate, endDate, selectedFormats);
     loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTag, showFavoritesOnly, sortMode, startDate, endDate, loadMedia]);
+  }, [activeTag, showFavoritesOnly, sortMode, startDate, endDate, selectedFormats, loadMedia]);
 
   // Cuộn vô tận không bao giờ hết (Endless Infinite Scroll / Loop):
   // Khi cuộn gần đến cuối danh sách (còn 2-3 bài), tự động nạp tiếp hoặc loop lại
@@ -189,7 +201,17 @@ export default function TikTokFeed() {
 
     // Trường hợp 1: Còn cursor tiếp theo hoặc đang ở chế độ random
     if (nextCursor) {
-      loadMedia(activeTag, showFavoritesOnly, favorites, sortMode, startDate, endDate, nextCursor, true);
+      loadMedia(
+        activeTag,
+        showFavoritesOnly,
+        favorites,
+        sortMode,
+        startDate,
+        endDate,
+        selectedFormats,
+        nextCursor,
+        true
+      );
       return;
     }
 
@@ -202,7 +224,7 @@ export default function TikTokFeed() {
       const withNewKeys = attachFeedKeys(loopedItems);
       setItems((prev) => [...prev, ...withNewKeys]);
     }
-  }, [isLoading, items.length, nextCursor, basePool, sortMode, activeTag, showFavoritesOnly, favorites, startDate, endDate, loadMedia]);
+  }, [isLoading, items.length, nextCursor, basePool, sortMode, activeTag, showFavoritesOnly, favorites, startDate, endDate, selectedFormats, loadMedia]);
 
   // Intersection Observer theo dõi vị trí bài viết đang xem
   useEffect(() => {
@@ -263,6 +285,41 @@ export default function TikTokFeed() {
     }
   };
 
+  // Xử lý chọn / gộp bộ lọc định dạng (Video / Album / Ảnh đơn)
+  const handleToggleFormat = (format: MediaFormat) => {
+    if (selectedFormats.length === 3) {
+      // Khi đang ở trạng thái Tất cả -> chuyển sang chỉ chọn riêng mục vừa click
+      setSelectedFormats([format]);
+      return;
+    }
+
+    if (selectedFormats.includes(format)) {
+      if (selectedFormats.length === 1) {
+        // Nếu đang là mục duy nhất, click lại sẽ quay về chọn Tất cả
+        setSelectedFormats(["VIDEO", "GALLERY", "IMAGE"]);
+      } else {
+        // Bỏ chọn mục này
+        setSelectedFormats(selectedFormats.filter((f) => f !== format));
+      }
+    } else {
+      // Gộp thêm mục này vào bộ lọc (Multi-select / Gộp filter)
+      setSelectedFormats([...selectedFormats, format]);
+    }
+  };
+
+  const handleSelectAllFormats = () => {
+    setSelectedFormats(["VIDEO", "GALLERY", "IMAGE"]);
+  };
+
+  const getFormatLabel = () => {
+    if (selectedFormats.length === 3) return "Tất cả";
+    const labels: string[] = [];
+    if (selectedFormats.includes("VIDEO")) labels.push("Video");
+    if (selectedFormats.includes("GALLERY")) labels.push("Album");
+    if (selectedFormats.includes("IMAGE")) labels.push("Ảnh đơn");
+    return labels.join(" + ");
+  };
+
   // Đặt lại toàn bộ bộ lọc
   const handleResetAllFilters = () => {
     setActiveTag(null);
@@ -271,11 +328,13 @@ export default function TikTokFeed() {
     setDatePreset("all");
     setStartDate("");
     setEndDate("");
+    setSelectedFormats(["VIDEO", "GALLERY", "IMAGE"]);
   };
 
   // Kiểm tra xem có bộ lọc nào đang được kích hoạt không
+  const isAllFormats = selectedFormats.length === 3;
   const hasActiveFilter = Boolean(
-    activeTag || showFavoritesOnly || startDate || endDate || sortMode !== "random"
+    activeTag || showFavoritesOnly || startDate || endDate || sortMode !== "random" || !isAllFormats
   );
 
   // Phím tắt bàn phím
@@ -300,10 +359,65 @@ export default function TikTokFeed() {
 
   return (
     <div className="relative w-full h-[100dvh] bg-black text-white overflow-hidden select-none">
-      {/* Top Bar Tối Giản: Huy hiệu bộ lọc đang bật (nếu có) + 1 Nút Menu duy nhất (hoàn toàn trong suốt không lớp phủ đen) */}
+      {/* Top Bar Tối Giản: Thanh chuyển nhanh định dạng + Huy hiệu bộ lọc đang bật + 1 Nút Menu duy nhất */}
       <header className="absolute top-0 left-0 right-0 p-3 sm:p-4 z-40 flex items-center justify-between pointer-events-none gap-2">
-        {/* Vùng hiển thị tag / bộ lọc đang kích hoạt để người dùng nắm rõ */}
+        {/* Vùng hiển thị tag / bộ lọc đang kích hoạt & Quick format selector */}
         <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto flex-wrap">
+          {/* Quick Format Filter Tabs: Chuyển nhanh hoặc gộp bộ lọc trực tiếp */}
+          <div className="flex items-center gap-0.5 sm:gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/20 pointer-events-auto text-xs shadow-lg">
+            <button
+              type="button"
+              onClick={handleSelectAllFormats}
+              title="Xem tất cả định dạng"
+              className={`px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
+                selectedFormats.length === 3
+                  ? "bg-white text-black shadow font-bold"
+                  : "text-neutral-300 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              Tất cả
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleFormat("VIDEO")}
+              title="Lọc riêng hoặc gộp Video"
+              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
+                selectedFormats.length < 3 && selectedFormats.includes("VIDEO")
+                  ? "bg-emerald-600 text-white shadow font-bold"
+                  : "text-neutral-300 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <Film className="w-3 h-3" />
+              <span>Video</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleFormat("GALLERY")}
+              title="Lọc riêng hoặc gộp Album"
+              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
+                selectedFormats.length < 3 && selectedFormats.includes("GALLERY")
+                  ? "bg-blue-600 text-white shadow font-bold"
+                  : "text-neutral-300 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <Layers className="w-3 h-3" />
+              <span>Album</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleFormat("IMAGE")}
+              title="Lọc riêng hoặc gộp Ảnh đơn"
+              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
+                selectedFormats.length < 3 && selectedFormats.includes("IMAGE")
+                  ? "bg-amber-600 text-white shadow font-bold"
+                  : "text-neutral-300 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <ImageIcon className="w-3 h-3" />
+              <span>Ảnh</span>
+            </button>
+          </div>
+
           {activeTag && (
             <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
               <span>#{activeTag}</span>
@@ -375,7 +489,7 @@ export default function TikTokFeed() {
         </div>
 
         {/* 1 Ô NÚT MENU TỔNG HỢP DUY NHẤT */}
-        <div className="flex items-center gap-2 pointer-events-auto ml-auto">
+        <div className="flex items-center gap-2 pointer-events-auto ml-auto shrink-0">
           <button
             onClick={() => setIsMenuOpen(true)}
             className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full backdrop-blur-md text-xs font-semibold transition active:scale-95 border shadow-lg ${
@@ -421,12 +535,12 @@ export default function TikTokFeed() {
               <>
                 <p className="text-lg font-medium mb-2">Không tìm thấy bài viết hoặc video phù hợp.</p>
                 <p className="text-sm text-white/40 mb-4">
-                  {startDate || endDate || activeTag
-                    ? "Hãy thử xoá bộ lọc ngày hoặc tag để xem thêm bài viết."
+                  {startDate || endDate || activeTag || selectedFormats.length < 3
+                    ? "Hãy thử xoá bộ lọc ngày, tag hoặc định dạng để xem thêm bài viết."
                     : "Vui lòng vào trang quản trị để thêm link từ X hoặc tải lên video/ảnh."}
                 </p>
                 <div className="flex gap-2">
-                  {(startDate || endDate || activeTag) && (
+                  {(startDate || endDate || activeTag || selectedFormats.length < 3) && (
                     <button
                       onClick={handleResetAllFilters}
                       className="px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-medium transition"
@@ -536,10 +650,86 @@ export default function TikTokFeed() {
 
             {/* Nội dung menu cuộn được */}
             <div className="flex-1 overflow-y-auto space-y-5 pr-1 no-scrollbar">
-              {/* 1. CHẾ ĐỘ HIỂN THỊ / SẮP XẾP */}
+              {/* 1. BỘ LỌC ĐỊNH DẠNG NỘI DUNG (VIDEO / ALBUM / ẢNH) */}
               <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider">
+                    1. Định dạng nội dung
+                  </label>
+                  <span className="text-[10px] text-neutral-400">
+                    {selectedFormats.length === 3
+                      ? "Đang hiện tất cả"
+                      : `Đang lọc: ${getFormatLabel()}`}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                  {/* Nút Tất cả */}
+                  <button
+                    type="button"
+                    onClick={handleSelectAllFormats}
+                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                      selectedFormats.length === 3
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Tất cả</span>
+                  </button>
+
+                  {/* Nút Video */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleFormat("VIDEO")}
+                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                      selectedFormats.length < 3 && selectedFormats.includes("VIDEO")
+                        ? "bg-emerald-600/30 border-emerald-500 text-emerald-300 font-bold shadow-sm shadow-emerald-500/20"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Film className="w-4 h-4" />
+                    <span>Video</span>
+                  </button>
+
+                  {/* Nút Album / Gallery */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleFormat("GALLERY")}
+                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                      selectedFormats.length < 3 && selectedFormats.includes("GALLERY")
+                        ? "bg-blue-600/30 border-blue-500 text-blue-300 font-bold shadow-sm shadow-blue-500/20"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span>Album</span>
+                  </button>
+
+                  {/* Nút Ảnh đơn */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleFormat("IMAGE")}
+                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                      selectedFormats.length < 3 && selectedFormats.includes("IMAGE")
+                        ? "bg-amber-600/30 border-amber-500 text-amber-300 font-bold shadow-sm shadow-amber-500/20"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    <span>Ảnh đơn</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-neutral-400 mt-2 px-1">
+                  <span>💡 Chạm 1 nút để lọc riêng, chạm thêm để gộp bộ lọc (VD: Video + Album)</span>
+                </div>
+              </div>
+
+              {/* 2. CHẾ ĐỘ HIỂN THỊ / SẮP XẾP */}
+              <div className="pt-2 border-t border-neutral-800/80">
                 <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  1. Chế độ lướt video / ảnh
+                  2. Chế độ lướt video / ảnh
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
@@ -583,10 +773,10 @@ export default function TikTokFeed() {
                 </div>
               </div>
 
-              {/* 2. BỘ LỌC THỜI GIAN */}
+              {/* 3. BỘ LỌC THỜI GIAN */}
               <div className="pt-2 border-t border-neutral-800/80">
                 <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  2. Lọc theo thời gian
+                  3. Lọc theo thời gian
                 </label>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <button
@@ -670,11 +860,11 @@ export default function TikTokFeed() {
                 </div>
               </div>
 
-              {/* 3. MỤC YÊU THÍCH & DANH SÁCH TAGS */}
+              {/* 4. MỤC YÊU THÍCH & DANH SÁCH TAGS */}
               <div className="pt-2 border-t border-neutral-800/80">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
-                    3. Chủ đề & Mục Yêu thích
+                    4. Chủ đề & Mục Yêu thích
                   </label>
                   <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
                     <span>🔥</span> Top 5 tag phổ biến
@@ -767,10 +957,10 @@ export default function TikTokFeed() {
                 </div>
               </div>
 
-              {/* 4. TRANG QUẢN TRỊ ADMIN */}
+              {/* 5. TRANG QUẢN TRỊ ADMIN */}
               <div className="pt-2 border-t border-neutral-800/80">
                 <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  4. Quản trị hệ thống
+                  5. Quản trị hệ thống
                 </label>
                 <Link
                   href="/admin"

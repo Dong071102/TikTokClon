@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   const sort = searchParams.get("sort") || "newest"; // "newest" | "oldest" | "random"
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
+  const formatsParam = searchParams.get("formats") || searchParams.get("format") || searchParams.get("type");
 
   const where: any = {};
 
@@ -17,6 +18,51 @@ export async function GET(request: Request) {
   if (idsParam) {
     const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
     where.id = { in: ids };
+  }
+
+  // Lọc theo định dạng nội dung (VIDEO / GALLERY / IMAGE hoặc gộp nhiều định dạng)
+  if (formatsParam) {
+    const rawFormats = formatsParam
+      .split(",")
+      .map((f) => f.trim().toUpperCase())
+      .filter((f) => ["VIDEO", "GALLERY", "IMAGE"].includes(f));
+
+    // Nếu chọn cả 3 hoặc không có giá trị hợp lệ thì không áp dụng điều kiện type
+    if (rawFormats.length > 0 && rawFormats.length < 3) {
+      if (rawFormats.length === 1) {
+        const fmt = rawFormats[0];
+        if (fmt === "VIDEO") {
+          where.type = "VIDEO";
+        } else if (fmt === "GALLERY") {
+          where.type = "IMAGE";
+          where.galleryUrls = { isEmpty: false };
+        } else if (fmt === "IMAGE") {
+          where.type = "IMAGE";
+          where.galleryUrls = { isEmpty: true };
+        }
+      } else if (rawFormats.length === 2) {
+        const hasVideo = rawFormats.includes("VIDEO");
+        const hasGallery = rawFormats.includes("GALLERY");
+        const hasImage = rawFormats.includes("IMAGE");
+
+        if (hasGallery && hasImage) {
+          // Lấy tất cả ảnh (cả album và ảnh đơn), loại bỏ video
+          where.type = "IMAGE";
+        } else if (hasVideo && hasGallery) {
+          // Gộp: Video và Album
+          where.OR = [
+            { type: "VIDEO" },
+            { type: "IMAGE", galleryUrls: { isEmpty: false } },
+          ];
+        } else if (hasVideo && hasImage) {
+          // Gộp: Video và Ảnh đơn
+          where.OR = [
+            { type: "VIDEO" },
+            { type: "IMAGE", galleryUrls: { isEmpty: true } },
+          ];
+        }
+      }
+    }
   }
 
   // Lọc theo Tag

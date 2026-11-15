@@ -47,7 +47,7 @@ export default function TagOverlay({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="absolute left-0 bottom-0 right-16 p-3 sm:p-4 pb-4 sm:pb-5 pointer-events-none z-20 flex flex-col justify-end max-w-xl">
+    <div className="absolute left-0 bottom-14 sm:bottom-16 right-16 p-3 sm:p-4 pb-1 sm:pb-1.5 pointer-events-none z-20 flex flex-col justify-end max-w-xl">
       {/* Tiêu đề & Hyperlinks nếu có */}
       {title && (
         <div className="text-white text-xs sm:text-sm font-medium mb-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] pointer-events-auto leading-relaxed">
