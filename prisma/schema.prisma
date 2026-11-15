@@ -1,0 +1,72 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum SourceType {
+  X_TWITTER
+  TIKTOK
+  INSTAGRAM
+  YOUTUBE
+  DIRECT_LINK
+  UPLOAD
+}
+
+enum StorageMode {
+  DIRECT_LINK
+  LOCAL_STORAGE
+}
+
+model MediaItem {
+  id           String         @id @default(uuid())
+  type         MediaType
+  sourceType   SourceType     @default(DIRECT_LINK)
+  sourceUrl    String?
+  storageMode  StorageMode    @default(DIRECT_LINK)
+  mediaUrl     String
+  localPath    String?
+  thumbnailUrl String?
+  title        String?
+  isLandscape  Boolean        @default(false)
+  defaultRotate Int           @default(0) // 0, 90, 180, 270 degrees
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  tags         MediaItemTag[]
+
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Tag {
+  id         String         @id @default(uuid())
+  name       String         @unique
+  slug       String         @unique
+  createdAt  DateTime       @default(now())
+  mediaItems MediaItemTag[]
+}
+
+model MediaItemTag {
+  mediaItemId String
+  tagId       String
+  mediaItem   MediaItem @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([mediaItemId, tagId])
+}
+
+model AdminUser {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
