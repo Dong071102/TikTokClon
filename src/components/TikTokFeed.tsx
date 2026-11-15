@@ -16,6 +16,8 @@ import {
   Clock,
   Sparkles,
   RotateCcw,
+  Menu,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -50,8 +52,7 @@ export default function TikTokFeed() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [allTags, setAllTags] = useState<TagItem[]>([]);
-  const [isTagDrawerOpen, setIsTagDrawerOpen] = useState(false);
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Bộ lọc Sắp xếp & Thời gian
   const [sortMode, setSortMode] = useState<"random" | "newest" | "oldest">("random");
@@ -253,6 +254,21 @@ export default function TikTokFeed() {
     }
   };
 
+  // Đặt lại toàn bộ bộ lọc
+  const handleResetAllFilters = () => {
+    setActiveTag(null);
+    setShowFavoritesOnly(false);
+    setSortMode("random");
+    setDatePreset("all");
+    setStartDate("");
+    setEndDate("");
+  };
+
+  // Kiểm tra xem có bộ lọc nào đang được kích hoạt không
+  const hasActiveFilter = Boolean(
+    activeTag || showFavoritesOnly || startDate || endDate || sortMode !== "random"
+  );
+
   // Phím tắt bàn phím
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -275,102 +291,97 @@ export default function TikTokFeed() {
 
   return (
     <div className="relative w-full h-[100dvh] bg-black text-white overflow-hidden select-none">
-      {/* Top Bar Điều hướng & Bộ lọc */}
+      {/* Top Bar Tối Giản: Huy hiệu bộ lọc đang bật (nếu có) + 1 Nút Menu duy nhất */}
       <header className="absolute top-0 left-0 right-0 p-3 sm:p-4 z-40 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent pointer-events-none gap-2">
+        {/* Vùng hiển thị tag / bộ lọc đang kích hoạt để người dùng nắm rõ */}
         <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto flex-wrap">
-          {/* Tag filter badge nếu có */}
           {activeTag && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-semibold border border-white/25">
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
               <span>#{activeTag}</span>
               <button
                 onClick={() => setActiveTag(null)}
-                className="hover:bg-white/20 rounded-full p-0.5"
+                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                title="Bỏ lọc tag này"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
 
-          {/* Quick Sort Toggle Button: Ngẫu nhiên / Mới nhất / Cũ nhất */}
-          <button
-            onClick={() => {
-              setSortMode((prev) => {
-                if (prev === "random") return "newest";
-                if (prev === "newest") return "oldest";
-                return "random";
-              });
-            }}
-            title="Đổi kiểu sắp xếp"
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-semibold transition border border-white/15"
-          >
-            {sortMode === "random" && (
-              <>
-                <Shuffle className="w-3.5 h-3.5 text-yellow-400" />
-                <span>Ngẫu nhiên</span>
-              </>
-            )}
-            {sortMode === "newest" && (
-              <>
-                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                <span>Mới nhất</span>
-              </>
-            )}
-            {sortMode === "oldest" && (
-              <>
-                <Clock className="w-3.5 h-3.5 text-purple-400" />
-                <span>Cũ nhất</span>
-              </>
-            )}
-          </button>
+          {showFavoritesOnly && (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-600/90 backdrop-blur-md text-white text-xs font-semibold border border-red-400/40 shadow">
+              <Heart className="w-3.5 h-3.5 fill-current" />
+              <span>Yêu thích ({favorites.length})</span>
+              <button
+                onClick={() => setShowFavoritesOnly(false)}
+                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                title="Bỏ xem yêu thích"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
-          {/* Nút Bộ lọc Ngày & Sắp xếp */}
-          <button
-            onClick={() => setIsFilterModalOpen(true)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-full backdrop-blur-md text-xs font-semibold transition border ${
-              startDate || endDate
-                ? "bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/30"
-                : "bg-white/10 hover:bg-white/20 border-white/15 text-white"
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{startDate || endDate ? "Đã lọc ngày" : "Ngày"}</span>
-          </button>
+          {(startDate || endDate) && (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-600/90 backdrop-blur-md text-white text-xs font-semibold border border-amber-400/40 shadow">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>
+                {datePreset === "today"
+                  ? "Hôm nay"
+                  : datePreset === "7days"
+                  ? "7 ngày qua"
+                  : datePreset === "30days"
+                  ? "30 ngày qua"
+                  : `${startDate || "..."} → ${endDate || "..."}`}
+              </span>
+              <button
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                  setDatePreset("all");
+                }}
+                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                title="Bỏ lọc ngày"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
-          {/* Nút Mục Yêu Thích */}
-          <button
-            onClick={() => {
-              setShowFavoritesOnly((prev) => !prev);
-              setActiveTag(null);
-            }}
-            title="Xem danh sách bài yêu thích"
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-full backdrop-blur-md text-xs font-semibold transition border ${
-              showFavoritesOnly
-                ? "bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/30"
-                : "bg-white/10 hover:bg-white/20 border-white/15 text-white"
-            }`}
-          >
-            <Heart className={`w-3.5 h-3.5 ${showFavoritesOnly ? "fill-white" : "text-red-400"}`} />
-            <span>({favorites.length})</span>
-          </button>
-
-          {/* Nút Chủ đề (Tags) */}
-          <button
-            onClick={() => setIsTagDrawerOpen(true)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-semibold transition border border-white/15"
-          >
-            <TagIcon className="w-3.5 h-3.5" />
-            <span>Tag</span>
-          </button>
+          {sortMode !== "random" && (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-800/90 backdrop-blur-md text-neutral-300 text-xs font-medium border border-neutral-700 shadow">
+              {sortMode === "newest" ? (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Mới nhất</span>
+                </>
+              ) : (
+                <>
+                  <Clock className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Cũ nhất</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <Link
-            href="/admin"
-            title="Trang quản trị Admin"
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white/80 hover:text-white transition border border-white/10"
+        {/* 1 Ô NÚT MENU TỔNG HỢP DUY NHẤT */}
+        <div className="flex items-center gap-2 pointer-events-auto ml-auto">
+          <button
+            onClick={() => setIsMenuOpen(true)}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full backdrop-blur-md text-xs font-semibold transition active:scale-95 border shadow-lg ${
+              hasActiveFilter
+                ? "bg-neutral-900/90 border-blue-500/60 text-white hover:bg-neutral-800"
+                : "bg-black/60 hover:bg-black/80 border-white/20 text-white"
+            }`}
+            title="Mở menu bộ lọc và tuỳ chọn"
           >
-            <Lock className="w-4 h-4" />
-          </Link>
+            <Menu className="w-4 h-4" />
+            <span>Menu</span>
+            {hasActiveFilter && (
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+            )}
+          </button>
         </div>
       </header>
 
@@ -408,12 +419,7 @@ export default function TikTokFeed() {
                 <div className="flex gap-2">
                   {(startDate || endDate || activeTag) && (
                     <button
-                      onClick={() => {
-                        setActiveTag(null);
-                        setStartDate("");
-                        setEndDate("");
-                        setDatePreset("all");
-                      }}
+                      onClick={handleResetAllFilters}
                       className="px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-medium transition"
                     >
                       Đặt lại bộ lọc
@@ -470,7 +476,7 @@ export default function TikTokFeed() {
                 setShowFavoritesOnly(false);
                 setActiveTag(tag);
               }}
-              onOpenTagDrawer={() => setIsTagDrawerOpen(true)}
+              onOpenTagDrawer={() => setIsMenuOpen(true)}
             />
           </div>
         ))}
@@ -482,262 +488,314 @@ export default function TikTokFeed() {
         )}
       </main>
 
-      {/* MODAL BỘ LỌC NGÀY & SẮP XẾP */}
-      {isFilterModalOpen && (
+      {/* DRAWER / MODAL MENU TỔNG HỢP (Bộ lọc Ngẫu nhiên, Ngày, Tag, Yêu thích & Admin) */}
+      {isMenuOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in"
-          onClick={() => setIsFilterModalOpen(false)}
+          onClick={() => setIsMenuOpen(false)}
         >
           <div
-            className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col space-y-5"
+            className="w-full max-w-lg bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 shadow-2xl max-h-[85vh] flex flex-col space-y-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <h3 className="text-base font-bold flex items-center gap-2">
-                <SlidersHorizontal className="w-5 h-5 text-blue-400" />
-                <span>Bộ lọc & Sắp xếp</span>
-              </h3>
+            {/* Header Menu */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-600/20 text-blue-400">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Menu & Bộ lọc</h3>
+                  <p className="text-[11px] text-neutral-400">Tuỳ chỉnh chế độ lướt, thời gian, chủ đề & quản trị</p>
+                </div>
+              </div>
               <button
-                onClick={() => setIsFilterModalOpen(false)}
-                className="p-1 rounded-full hover:bg-white/10 text-white/70 hover:text-white"
+                onClick={() => setIsMenuOpen(false)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* 1. Chọn Thứ tự Sắp xếp */}
-            <div>
-              <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                Chế độ hiển thị khi lướt
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSortMode("random")}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
-                    sortMode === "random"
-                      ? "bg-yellow-500/20 border-yellow-500 text-yellow-300 font-bold"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  <Shuffle className="w-4 h-4" />
-                  <span>Ngẫu nhiên</span>
-                </button>
+            {/* Nội dung menu cuộn được */}
+            <div className="flex-1 overflow-y-auto space-y-5 pr-1 no-scrollbar">
+              {/* 1. CHẾ ĐỘ HIỂN THỊ / SẮP XẾP */}
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                  1. Chế độ lướt video / ảnh
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSortMode("random")}
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
+                      sortMode === "random"
+                        ? "bg-yellow-500/20 border-yellow-500 text-yellow-300 font-bold shadow-sm shadow-yellow-500/20"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Shuffle className="w-4 h-4" />
+                    <span>Ngẫu nhiên</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setSortMode("newest")}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
-                    sortMode === "newest"
-                      ? "bg-blue-600/30 border-blue-500 text-blue-300 font-bold"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Mới nhất</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortMode("newest")}
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
+                      sortMode === "newest"
+                        ? "bg-blue-600/30 border-blue-500 text-blue-300 font-bold shadow-sm shadow-blue-500/20"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Mới nhất</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setSortMode("oldest")}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
-                    sortMode === "oldest"
-                      ? "bg-purple-600/30 border-purple-500 text-purple-300 font-bold"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  <Clock className="w-4 h-4" />
-                  <span>Cũ nhất</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 2. Lọc theo Mốc Thời gian */}
-            <div>
-              <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                Mốc thời gian
-              </label>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <button
-                  type="button"
-                  onClick={() => handleSelectDatePreset("all")}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                    datePreset === "all"
-                      ? "bg-white text-black font-bold border-white"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  Tất cả thời gian
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSelectDatePreset("today")}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                    datePreset === "today"
-                      ? "bg-white text-black font-bold border-white"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  Hôm nay
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSelectDatePreset("7days")}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                    datePreset === "7days"
-                      ? "bg-white text-black font-bold border-white"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  7 ngày qua
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSelectDatePreset("30days")}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                    datePreset === "30days"
-                      ? "bg-white text-black font-bold border-white"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  30 ngày qua
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortMode("oldest")}
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
+                      sortMode === "oldest"
+                        ? "bg-purple-600/30 border-purple-500 text-purple-300 font-bold shadow-sm shadow-purple-500/20"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Cũ nhất</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Tuỳ chọn Khoảng ngày (Date Range Pickers) */}
-              <div className="space-y-2 pt-1 border-t border-neutral-800">
-                <span className="text-[11px] text-neutral-400 font-semibold block">Hoặc chọn khoảng ngày tuỳ ý:</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-neutral-400 block mb-0.5">Từ ngày</label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => {
-                        setStartDate(e.target.value);
-                        setDatePreset("custom");
-                      }}
-                      className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-neutral-400 block mb-0.5">Đến ngày</label>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => {
-                        setEndDate(e.target.value);
-                        setDatePreset("custom");
-                      }}
-                      className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                    />
+              {/* 2. BỘ LỌC THỜI GIAN */}
+              <div className="pt-2 border-t border-neutral-800/80">
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                  2. Lọc theo thời gian
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset("all")}
+                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
+                      datePreset === "all"
+                        ? "bg-white text-black font-bold border-white"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    Tất cả thời gian
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset("today")}
+                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
+                      datePreset === "today"
+                        ? "bg-white text-black font-bold border-white"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    Hôm nay
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset("7days")}
+                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
+                      datePreset === "7days"
+                        ? "bg-white text-black font-bold border-white"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    7 ngày qua
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset("30days")}
+                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
+                      datePreset === "30days"
+                        ? "bg-white text-black font-bold border-white"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    30 ngày qua
+                  </button>
+                </div>
+
+                {/* Khoảng ngày tuỳ chọn */}
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[11px] text-neutral-400 font-semibold block">Hoặc chọn khoảng ngày tuỳ ý:</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-neutral-400 block mb-0.5">Từ ngày</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => {
+                          setStartDate(e.target.value);
+                          setDatePreset("custom");
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-neutral-400 block mb-0.5">Đến ngày</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => {
+                          setEndDate(e.target.value);
+                          setDatePreset("custom");
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
+
+              {/* 3. MỤC YÊU THÍCH & DANH SÁCH TAGS */}
+              <div className="pt-2 border-t border-neutral-800/80">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
+                    3. Chủ đề & Mục Yêu thích
+                  </label>
+                  <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
+                    <span>🔥</span> Top 5 tag phổ biến
+                  </span>
+                </div>
+
+                {/* Các nút lựa chọn chung */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTag(null);
+                      setShowFavoritesOnly(false);
+                      setIsMenuOpen(false);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                      activeTag === null && !showFavoritesOnly
+                        ? "bg-white text-black font-bold border-white"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    Tất cả bài viết
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFavoritesOnly(true);
+                      setActiveTag(null);
+                      setIsMenuOpen(false);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border ${
+                      showFavoritesOnly
+                        ? "bg-red-600 border-red-500 text-white font-bold shadow-md shadow-red-600/30"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <Heart className={`w-3.5 h-3.5 ${showFavoritesOnly ? "fill-white" : "text-red-400"}`} />
+                    <span>Mục yêu thích ({favorites.length})</span>
+                  </button>
+                </div>
+
+                {/* Danh sách Tags với Top 5 phân biệt màu sắc */}
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto no-scrollbar p-2 bg-neutral-950/70 rounded-xl border border-neutral-800">
+                  {allTags.length === 0 ? (
+                    <div className="text-xs text-neutral-500 italic p-2">Chưa có tag nào được tạo.</div>
+                  ) : (
+                    allTags.map((t, idx) => {
+                      const isTop5 = idx < 5;
+                      const isSelected = activeTag === t.slug && !showFavoritesOnly;
+
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveTag(t.slug);
+                            setShowFavoritesOnly(false);
+                            setIsMenuOpen(false);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition active:scale-95 ${
+                            isSelected
+                              ? isTop5
+                                ? "bg-amber-500 border-amber-400 text-black font-bold shadow-md shadow-amber-500/20"
+                                : "bg-blue-600 border-blue-500 text-white font-bold shadow-md shadow-blue-600/20"
+                              : isTop5
+                              ? "bg-amber-500/10 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                              : "bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                          }`}
+                        >
+                          {isTop5 && <span>🔥</span>}
+                          <span>#{t.name}</span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                              isSelected
+                                ? isTop5
+                                  ? "bg-black/20 text-black"
+                                  : "bg-white/20 text-white"
+                                : isTop5
+                                ? "bg-amber-500/25 text-amber-200"
+                                : "bg-neutral-700 text-neutral-400"
+                            }`}
+                          >
+                            {t.count}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* 4. TRANG QUẢN TRỊ ADMIN */}
+              <div className="pt-2 border-t border-neutral-800/80">
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                  4. Quản trị hệ thống
+                </label>
+                <Link
+                  href="/admin"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center justify-between p-3 rounded-xl bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700 hover:border-neutral-600 transition group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover:text-blue-300 transition">
+                        Trang Quản trị Admin
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        Thêm link X/mạng xã hội, tải lên video/ảnh, sửa tag và quản lý bài
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:text-white transition shrink-0" />
+                </Link>
+              </div>
             </div>
 
-            {/* Nút hành động */}
-            <div className="flex gap-2 pt-2 border-t border-neutral-800">
+            {/* Footer Nút hành động */}
+            <div className="flex gap-2 pt-3 border-t border-neutral-800 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  handleSelectDatePreset("all");
-                  setSortMode("random");
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300 flex items-center justify-center gap-1.5 transition"
+                onClick={handleResetAllFilters}
+                className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300 flex items-center justify-center gap-1.5 transition active:scale-95"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Đặt lại</span>
+                <span>Đặt lại tất cả</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setIsFilterModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white flex items-center justify-center transition shadow-lg shadow-blue-600/20"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white flex items-center justify-center transition shadow-lg shadow-blue-600/25 active:scale-95"
               >
-                <span>Áp dụng</span>
+                <span>Áp dụng & Đóng</span>
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DRAWER DANH SÁCH TAGS */}
-      {isTagDrawerOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in"
-          onClick={() => setIsTagDrawerOpen(false)}
-        >
-          <div
-            className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl max-h-[75vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <TagIcon className="w-5 h-5 text-blue-400" />
-                <span>Khám phá theo Tag</span>
-              </h3>
-              <button
-                onClick={() => setIsTagDrawerOpen(false)}
-                className="p-1 rounded-full hover:bg-white/10 text-white/70 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto no-scrollbar flex flex-wrap gap-2.5">
-              <button
-                onClick={() => {
-                  setActiveTag(null);
-                  setShowFavoritesOnly(false);
-                  setIsTagDrawerOpen(false);
-                }}
-                className={`px-3.5 py-1.5 rounded-full text-sm font-semibold transition ${
-                  activeTag === null && !showFavoritesOnly
-                    ? "bg-white text-black font-bold"
-                    : "bg-white/10 text-white hover:bg-white/20"
-                }`}
-              >
-                Tất cả bài viết
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowFavoritesOnly(true);
-                  setActiveTag(null);
-                  setIsTagDrawerOpen(false);
-                }}
-                className={`px-3.5 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 transition ${
-                  showFavoritesOnly
-                    ? "bg-red-600 text-white font-bold"
-                    : "bg-white/10 text-white hover:bg-white/20"
-                }`}
-              >
-                <Heart className="w-3.5 h-3.5 fill-current" />
-                <span>Mục yêu thích ({favorites.length})</span>
-              </button>
-
-              {allTags.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setActiveTag(t.slug);
-                    setShowFavoritesOnly(false);
-                    setIsTagDrawerOpen(false);
-                  }}
-                  className={`px-3.5 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1.5 transition ${
-                    activeTag === t.slug && !showFavoritesOnly
-                      ? "bg-blue-600 text-white font-bold"
-                      : "bg-white/10 text-white hover:bg-white/20"
-                  }`}
-                >
-                  <span>#{t.name}</span>
-                  <span className="text-xs opacity-60">({t.count})</span>
-                </button>
-              ))}
             </div>
           </div>
         </div>
