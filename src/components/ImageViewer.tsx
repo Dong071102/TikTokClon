@@ -50,6 +50,7 @@ export default function ImageViewer({ src, alt = "Image", isActive }: ImageViewe
               <img
                 src={src}
                 alt={alt}
+                referrerPolicy="no-referrer"
                 className="w-full h-full object-contain pointer-events-auto"
                 loading="eager"
               />

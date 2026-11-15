@@ -382,12 +382,20 @@ export default function AdminDashboardPage() {
                         playsInline
                         className="w-full h-full object-contain"
                         style={{ transform: `rotate(${defaultRotate}deg)` }}
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.src.includes("/api/proxy")) {
+                            target.src = `/api/proxy?url=${encodeURIComponent(parsedData.mediaUrl)}`;
+                            target.load();
+                          }
+                        }}
                       />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={parsedData.mediaUrl}
                         alt="Preview"
+                        referrerPolicy="no-referrer"
                         className="w-full h-full object-contain"
                       />
                     )}
@@ -657,12 +665,20 @@ export default function AdminDashboardPage() {
                           src={item.mediaUrl}
                           className="w-full h-full object-contain"
                           style={{ transform: `rotate(${item.defaultRotate}deg)` }}
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.src.includes("/api/proxy")) {
+                              target.src = `/api/proxy?url=${encodeURIComponent(item.mediaUrl)}`;
+                              target.load();
+                            }
+                          }}
                         />
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.mediaUrl}
                           alt={item.title || "media"}
+                          referrerPolicy="no-referrer"
                           className="w-full h-full object-contain"
                         />
                       )}

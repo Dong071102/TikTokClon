@@ -113,6 +113,14 @@ export default function VideoPlayer({
           loop
           preload="metadata"
           className="w-full h-full object-contain"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (!target.src.includes("/api/proxy")) {
+              target.src = `/api/proxy?url=${encodeURIComponent(src)}`;
+              target.load();
+              if (isActive) target.play().catch(() => {});
+            }
+          }}
         />
       </div>
 

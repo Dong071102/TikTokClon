@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "TikTok Media Viewer",
   description: "Lướt xem ảnh và video phong cách TikTok tối giản",
+  referrer: "no-referrer",
   icons: {
     icon: "/favicon.ico",
   },
@@ -25,6 +26,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="dark h-full bg-black">
+      <head>
+        <meta name="referrer" content="no-referrer" />
+      </head>
       <body className="h-full bg-black text-white antialiased overflow-hidden">
         {children}
       </body>
