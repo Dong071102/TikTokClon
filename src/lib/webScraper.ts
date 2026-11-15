@@ -34,6 +34,166 @@ function unescapeString(str: string): string {
     .replace(/&amp;/g, "&");
 }
 
+// Cache Token cho LeakGallery để tối ưu tốc độ và không spam request
+let cachedLeakGalleryToken: { token: string; expiresAt: number } | null = null;
+
+async function getLeakGalleryAppToken(baseUrl: string): Promise<string | null> {
+  const now = Date.now();
+  if (cachedLeakGalleryToken && cachedLeakGalleryToken.expiresAt > now) {
+    return cachedLeakGalleryToken.token;
+  }
+
+  try {
+    const res = await fetch(baseUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return null;
+    const html = await res.text();
+    const m = html.match(/<script id="ng-state" type="application\/json">([\s\S]*?)<\/script>/i);
+    if (!m) return null;
+
+    const data = JSON.parse(m[1]);
+    const token = data["APP_TOKEN"];
+    if (token && typeof token === "string") {
+      cachedLeakGalleryToken = { token, expiresAt: now + 8 * 60 * 1000 };
+      return token;
+    }
+  } catch {}
+  return null;
+}
+
+// Bóc tách chuyên biệt cho LeakGallery (SPA Angular với private API và token)
+async function scrapeLeakGallery(
+  parsedUrl: URL,
+  sourceUrl: string
+): Promise<{ title: string; items: ScrapedMediaItem[]; error?: string } | null> {
+  try {
+    const parts = parsedUrl.pathname.split("/").filter(Boolean);
+    if (parts.length === 0) return null;
+
+    const username = parts[0];
+    const tab = parts[1] || "Photos";
+
+    // Hỗ trợ cả ?page=, ?offset=, hoặc số trang trong path
+    let pageNum = 1;
+    if (parsedUrl.searchParams.has("page")) {
+      pageNum = parseInt(parsedUrl.searchParams.get("page")!, 10) || 1;
+    } else if (parsedUrl.searchParams.has("offset")) {
+      const offset = parseInt(parsedUrl.searchParams.get("offset")!, 10) || 0;
+      pageNum = Math.floor(offset / 40) + 1;
+    } else if (parts[2] && !isNaN(Number(parts[2]))) {
+      pageNum = parseInt(parts[2], 10);
+    }
+
+    const basePageUrl = `https://leakgallery.com/${username}/${tab}`;
+    let medias: any[] = [];
+    let pageTitle = `${username} - ${tab} (Trang ${pageNum})`;
+
+    // Nếu là page 1, thử lấy trước từ state HTML ban đầu
+    if (pageNum === 1) {
+      try {
+        const res = await fetch(basePageUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (res.ok) {
+          const html = await res.text();
+          const m = html.match(/<script id="ng-state" type="application\/json">([\s\S]*?)<\/script>/i);
+          if (m) {
+            const ngState = JSON.parse(m[1]);
+            if (ngState["APP_TOKEN"]) {
+              cachedLeakGalleryToken = { token: ngState["APP_TOKEN"], expiresAt: Date.now() + 8 * 60 * 1000 };
+            }
+            const stateKey = Object.keys(ngState).find(
+              (k) => k.startsWith(`httpGet:profile/${username}`) || k.includes(`profile/${username}`)
+            );
+            if (stateKey && ngState[stateKey] && Array.isArray(ngState[stateKey].medias)) {
+              medias = ngState[stateKey].medias;
+              if (ngState[stateKey].profile?.seo_name) {
+                pageTitle = `${ngState[stateKey].profile.seo_name} (${username}) - ${tab} (Trang 1)`;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Nếu pageNum > 1 hoặc state chưa có, gọi trực tiếp API kèm X-App-Token
+    if (pageNum > 1 || medias.length === 0) {
+      const appToken = await getLeakGalleryAppToken(basePageUrl);
+      if (!appToken) {
+        return {
+          title: pageTitle,
+          items: [],
+          error: "Không thể lấy APP_TOKEN bảo mật từ LeakGallery",
+        };
+      }
+
+      const apiUrl = `https://api.leakgallery.com/profile/${username}/${pageNum}?type=${tab}&sort=MostRecent&fake=true&tag=0`;
+      const apiRes = await fetch(apiUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Origin: "https://leakgallery.com",
+          Referer: basePageUrl,
+          "X-App-Token": appToken,
+          Accept: "application/json, text/plain, */*",
+        },
+        signal: AbortSignal.timeout(12000),
+      });
+
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        if (Array.isArray(data.medias)) {
+          medias = data.medias;
+        }
+      } else {
+        return {
+          title: pageTitle,
+          items: [],
+          error: `API LeakGallery trả về HTTP ${apiRes.status}`,
+        };
+      }
+    }
+
+    const items: ScrapedMediaItem[] = medias.map((m, idx) => {
+      const isVideo = Boolean(m.is_video);
+      const cdnUrl = `https://cdn.leakgallery.com/${m.file_path}`;
+      const thumbUrl = m.thumbnail_path ? `https://cdn.leakgallery.com/${m.thumbnail_path}` : undefined;
+      return {
+        id: `${isVideo ? "video" : "img"}-${pageNum}-${idx}-${m.id}`,
+        url: cdnUrl,
+        type: isVideo ? "VIDEO" : "IMAGE",
+        sourceUrl,
+        pageTitle: m.caption_title || pageTitle,
+        thumbnailUrl: thumbUrl,
+      };
+    });
+
+    return {
+      title: pageTitle,
+      items,
+    };
+  } catch (err: any) {
+    return {
+      title: "LeakGallery",
+      items: [],
+      error: err.message || "Lỗi tải dữ liệu LeakGallery",
+    };
+  }
+}
+
 // Bóc tách media từ 1 URL trang web đơn lẻ
 export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
   title: string;
@@ -52,6 +212,12 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
       items: [],
       error: "Đường dẫn URL không hợp lệ",
     };
+  }
+
+  // 0. Xử lý chuyên biệt cho các trang SPA bảo mật như leakgallery.com
+  if (parsedUrl.hostname.includes("leakgallery.com")) {
+    const leakResult = await scrapeLeakGallery(parsedUrl, targetUrl);
+    if (leakResult) return leakResult;
   }
 
   try {
@@ -518,6 +684,28 @@ export async function scrapeMultipleWebUrls(
   if (deepCrawl) {
     for (const url of cleanUrls) {
       try {
+        let parsedU: URL;
+        try {
+          parsedU = new URL(url);
+        } catch {
+          finalUrlsToScrape.push(url);
+          continue;
+        }
+
+        // Hỗ trợ đặc biệt cho LeakGallery: tự động sinh các trang API ngầm (?page=1, ?page=2...)
+        if (parsedU.hostname.includes("leakgallery.com")) {
+          const totalPages = Math.max(1, Math.min(8, Math.ceil(maxDeepPerUrl / 20)));
+          for (let p = 1; p <= totalPages; p++) {
+            const sep = url.includes("?") ? "&" : "?";
+            const pUrl = url.includes("page=") || url.includes("offset=") ? url : `${url}${sep}page=${p}`;
+            if (!finalUrlsToScrape.includes(pUrl)) {
+              finalUrlsToScrape.push(pUrl);
+            }
+            if (url.includes("page=") || url.includes("offset=")) break;
+          }
+          continue;
+        }
+
         const res = await fetch(url, {
           headers: {
             "User-Agent":
