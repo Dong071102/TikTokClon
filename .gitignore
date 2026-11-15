@@ -36,3 +36,9 @@ next-env.d.ts
 # local uploads
 /public/uploads/*
 !/public/uploads/.gitkeep
+
+# docker files (private)
+Dockerfile
+docker-compose.yml
+docker-compose*.yml
+
