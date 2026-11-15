@@ -19,6 +19,8 @@ import {
   HardDrive,
   Globe,
   Pencil,
+  X,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -83,6 +85,7 @@ export default function AdminDashboardPage() {
   const [editingTagsInput, setEditingTagsInput] = useState<string>("");
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [availableTags, setAvailableTags] = useState<Array<{ id: string; name: string; slug: string; count: number }>>([]);
+  const [tagFilterQuery, setTagFilterQuery] = useState("");
 
   // Tải danh sách tag có sẵn để chọn nhanh
   const loadExistingTags = useCallback(async () => {
@@ -335,7 +338,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Render danh sách tag có sẵn với màu sắc phân biệt cho Top 5 tag phổ biến nhất
+  // Render danh sách tag có sẵn với màu sắc phân biệt cho Top 5 tag phổ biến nhất và ô tìm kiếm/lọc tag
   const renderTagSelector = (
     selectedString: string,
     onChange: (val: string) => void
@@ -369,52 +372,111 @@ export default function AdminDashboardPage() {
       onChange(updated.join(", "));
     };
 
+    const query = tagFilterQuery.toLowerCase().trim();
+    const filteredTags = query
+      ? availableTags.filter(
+          (t) =>
+            t.name.toLowerCase().includes(query) ||
+            t.slug.toLowerCase().includes(query)
+        )
+      : availableTags;
+
     return (
-      <div className="mt-2.5 space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] text-neutral-400 font-medium">
-          <span>Chọn nhanh từ tag có sẵn:</span>
+      <div className="mt-2.5 space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] text-neutral-400 font-medium">
+          <div className="flex items-center gap-1.5">
+            <span>Chọn nhanh từ tag có sẵn:</span>
+            {filteredTags.length > 0 && query && (
+              <span className="text-[10px] text-neutral-400 bg-neutral-800 px-1.5 py-0.2 rounded-full">
+                {filteredTags.length} kết quả
+              </span>
+            )}
+          </div>
           <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
             <span>🔥</span> Top 5 tag nhiều nhất
           </span>
         </div>
-        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto no-scrollbar p-2 bg-neutral-950/70 rounded-xl border border-neutral-800">
-          {availableTags.map((t, idx) => {
-            const isTop5 = idx < 5;
-            const isSelected = currentTags.includes(t.name.toLowerCase());
 
-            return (
+        {/* Ô tìm kiếm / lọc tag */}
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <input
+            type="text"
+            placeholder="Lọc / tìm kiếm nhanh trong danh sách tag..."
+            value={tagFilterQuery}
+            onChange={(e) => setTagFilterQuery(e.target.value)}
+            className="w-full pl-8 pr-7 py-1.5 bg-neutral-900 border border-neutral-700/80 rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
+          />
+          {tagFilterQuery && (
+            <button
+              type="button"
+              onClick={() => setTagFilterQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+              title="Xoá tìm kiếm tag"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Danh sách Tag Chips */}
+        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto no-scrollbar p-2 bg-neutral-950/70 rounded-xl border border-neutral-800">
+          {filteredTags.length === 0 ? (
+            <div className="w-full flex items-center justify-between p-2 text-xs text-neutral-400">
+              <span>Không tìm thấy tag &quot;{tagFilterQuery}&quot;</span>
               <button
-                key={t.id}
                 type="button"
-                onClick={() => handleToggle(t.name)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition active:scale-95 ${
-                  isSelected
-                    ? isTop5
-                      ? "bg-amber-500 border-amber-400 text-black font-bold shadow-md shadow-amber-500/20"
-                      : "bg-blue-600 border-blue-500 text-white font-bold"
-                    : isTop5
-                    ? "bg-amber-500/10 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
-                    : "bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white"
-                }`}
+                onClick={() => {
+                  handleToggle(tagFilterQuery);
+                  setTagFilterQuery("");
+                }}
+                className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center gap-1 transition active:scale-95 shadow-sm"
               >
-                {isTop5 && <span>🔥</span>}
-                <span>#{t.name}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                <Plus className="w-3.5 h-3.5" />
+                <span>Thêm #{tagFilterQuery}</span>
+              </button>
+            </div>
+          ) : (
+            filteredTags.map((t) => {
+              // Xác định vị trí top 5 dựa theo index trong danh sách gốc availableTags
+              const originalIndex = availableTags.findIndex((item) => item.id === t.id);
+              const isTop5 = originalIndex >= 0 && originalIndex < 5;
+              const isSelected = currentTags.includes(t.name.toLowerCase());
+
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleToggle(t.name)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition active:scale-95 ${
                     isSelected
                       ? isTop5
-                        ? "bg-black/20 text-black"
-                        : "bg-white/20 text-white"
+                        ? "bg-amber-500 border-amber-400 text-black font-bold shadow-md shadow-amber-500/20"
+                        : "bg-blue-600 border-blue-500 text-white font-bold"
                       : isTop5
-                      ? "bg-amber-500/25 text-amber-200"
-                      : "bg-neutral-700 text-neutral-400"
+                      ? "bg-amber-500/10 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                      : "bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white"
                   }`}
                 >
-                  {t.count}
-                </span>
-              </button>
-            );
-          })}
+                  {isTop5 && <span>🔥</span>}
+                  <span>#{t.name}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      isSelected
+                        ? isTop5
+                          ? "bg-black/20 text-black"
+                          : "bg-white/20 text-white"
+                        : isTop5
+                        ? "bg-amber-500/25 text-amber-200"
+                        : "bg-neutral-700 text-neutral-400"
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
     );
