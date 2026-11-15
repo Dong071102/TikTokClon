@@ -82,8 +82,22 @@ export default function AdminDashboardPage() {
   const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
   const [editingTagsInput, setEditingTagsInput] = useState<string>("");
   const [isSavingTags, setIsSavingTags] = useState(false);
+  const [availableTags, setAvailableTags] = useState<Array<{ id: string; name: string; slug: string; count: number }>>([]);
 
-  // Kiểm tra auth
+  // Tải danh sách tag có sẵn để chọn nhanh
+  const loadExistingTags = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tags");
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTags(data.tags || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  // Kiểm tra auth & tải tags
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => {
@@ -96,7 +110,9 @@ export default function AdminDashboardPage() {
       .catch(() => {
         window.location.href = "/admin/login";
       });
-  }, []);
+
+    loadExistingTags();
+  }, [loadExistingTags]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -167,6 +183,7 @@ export default function AdminDashboardPage() {
       setDefaultRotate(0);
       setIsLandscape(false);
       loadMediaList();
+      loadExistingTags();
     } catch (err: any) {
       setLinkMsg({ type: "error", text: err.message });
     } finally {
@@ -211,6 +228,7 @@ export default function AdminDashboardPage() {
       setUploadRotate(0);
       setUploadLandscape(false);
       loadMediaList();
+      loadExistingTags();
     } catch (err: any) {
       setUploadMsg({ type: "error", text: err.message });
     } finally {
@@ -308,12 +326,98 @@ export default function AdminDashboardPage() {
           prev.map((m) => (m.id === id ? { ...m, tags: splitTags } : m))
         );
         setEditingTagsId(null);
+        loadExistingTags();
       }
     } catch (e) {
       console.error(e);
     } finally {
       setIsSavingTags(false);
     }
+  };
+
+  // Render danh sách tag có sẵn với màu sắc phân biệt cho Top 5 tag phổ biến nhất
+  const renderTagSelector = (
+    selectedString: string,
+    onChange: (val: string) => void
+  ) => {
+    if (availableTags.length === 0) return null;
+
+    const currentTags = selectedString
+      .split(/[,;\s]+/)
+      .map((t) => t.trim().replace(/^#/, "").toLowerCase())
+      .filter(Boolean);
+
+    const handleToggle = (tagName: string) => {
+      const cleanName = tagName.trim().replace(/^#/, "");
+      const lowerName = cleanName.toLowerCase();
+      let updated: string[];
+
+      if (currentTags.includes(lowerName)) {
+        // Nếu đã có thì bỏ chọn
+        updated = selectedString
+          .split(/[,;\s]+/)
+          .map((t) => t.trim().replace(/^#/, ""))
+          .filter((t) => t.toLowerCase() !== lowerName);
+      } else {
+        // Nếu chưa có thì thêm vào
+        const existing = selectedString
+          .split(/[,;\s]+/)
+          .map((t) => t.trim().replace(/^#/, ""))
+          .filter(Boolean);
+        updated = [...existing, cleanName];
+      }
+      onChange(updated.join(", "));
+    };
+
+    return (
+      <div className="mt-2.5 space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] text-neutral-400 font-medium">
+          <span>Chọn nhanh từ tag có sẵn:</span>
+          <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
+            <span>🔥</span> Top 5 tag nhiều nhất
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto no-scrollbar p-2 bg-neutral-950/70 rounded-xl border border-neutral-800">
+          {availableTags.map((t, idx) => {
+            const isTop5 = idx < 5;
+            const isSelected = currentTags.includes(t.name.toLowerCase());
+
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => handleToggle(t.name)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition active:scale-95 ${
+                  isSelected
+                    ? isTop5
+                      ? "bg-amber-500 border-amber-400 text-black font-bold shadow-md shadow-amber-500/20"
+                      : "bg-blue-600 border-blue-500 text-white font-bold"
+                    : isTop5
+                    ? "bg-amber-500/10 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                    : "bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                }`}
+              >
+                {isTop5 && <span>🔥</span>}
+                <span>#{t.name}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isSelected
+                      ? isTop5
+                        ? "bg-black/20 text-black"
+                        : "bg-white/20 text-white"
+                      : isTop5
+                      ? "bg-amber-500/25 text-amber-200"
+                      : "bg-neutral-700 text-neutral-400"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -557,6 +661,7 @@ export default function AdminDashboardPage() {
                           onChange={(e) => setTagsInput(e.target.value)}
                           className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
                         />
+                        {renderTagSelector(tagsInput, setTagsInput)}
                       </div>
                     </div>
 
@@ -675,6 +780,7 @@ export default function AdminDashboardPage() {
                         onChange={(e) => setUploadTags(e.target.value)}
                         className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition"
                       />
+                      {renderTagSelector(uploadTags, setUploadTags)}
                     </div>
                   </div>
                 </div>
@@ -803,6 +909,7 @@ export default function AdminDashboardPage() {
                               }}
                               autoFocus
                             />
+                            {renderTagSelector(editingTagsInput, setEditingTagsInput)}
                             <div className="flex gap-1.5 justify-end">
                               <button
                                 onClick={() => handleSaveTags(item.id)}
