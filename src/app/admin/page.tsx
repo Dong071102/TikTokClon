@@ -89,6 +89,7 @@ export default function AdminDashboardPage() {
   const [pageBuilderUrl, setPageBuilderUrl] = useState("");
   const [pageBuilderFrom, setPageBuilderFrom] = useState(1);
   const [pageBuilderTo, setPageBuilderTo] = useState(5);
+  const [pageBuilderStep, setPageBuilderStep] = useState(1);
   const [scrapedPages, setScrapedPages] = useState<
     Array<{
       url: string;
@@ -263,54 +264,66 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Hàm tạo dải link phân trang thông minh
+  // Hàm tạo dải link phân trang thông minh (Hỗ trợ cả page=N và lazy load offset=0, 20, 40...)
   const generatePaginationUrls = (
     urlTemplate: string,
     from: number,
-    to: number
+    to: number,
+    step: number = 1
   ): string[] => {
     const trimmed = urlTemplate.trim();
     if (!trimmed) return [];
 
-    const start = Math.max(1, Math.min(from, to));
-    const end = Math.max(1, Math.max(from, to));
+    const validStep = Math.max(1, step || 1);
+    const start = Math.min(from, to);
+    const end = Math.max(from, to);
     const generated: string[] = [];
 
-    // 1. Kiểm tra placeholder rõ ràng: [page] hoặc {page}
-    const hasPlaceholder = /\[page\]|\{page\}/i.test(trimmed);
+    // 1. Kiểm tra placeholder: [page], {page}, [offset], {offset}
+    const hasPagePlaceholder = /\[page\]|\{page\}/i.test(trimmed);
+    const hasOffsetPlaceholder = /\[offset\]|\{offset\}/i.test(trimmed);
 
-    for (let page = start; page <= end; page++) {
-      if (hasPlaceholder) {
-        generated.push(trimmed.replace(/\[page\]|\{page\}/gi, String(page)));
+    for (let val = start; val <= end; val += validStep) {
+      if (hasPagePlaceholder) {
+        generated.push(trimmed.replace(/\[page\]|\{page\}/gi, String(val)));
+      } else if (hasOffsetPlaceholder) {
+        generated.push(trimmed.replace(/\[offset\]|\{offset\}/gi, String(val)));
+      } else if (/[?&](?:offset|skip|start)=\d+/i.test(trimmed)) {
+        // Hỗ trợ dạng lazy load: offset=0, offset=20...
+        const url = trimmed.replace(
+          /([?&](?:offset|skip|start)=)\d+/gi,
+          `$1${val}`
+        );
+        generated.push(url);
       } else if (/from_videos=\d+|from_albums=\d+/i.test(trimmed)) {
         // KVS CMS AJAX pattern (như abc.pink, xnhau...)
         let url = trimmed;
         if (/from_videos=\d+/i.test(url)) {
-          url = url.replace(/from_videos=\d+/gi, `from_videos=${page}`);
+          url = url.replace(/from_videos=\d+/gi, `from_videos=${val}`);
         }
         if (/from_albums=\d+/i.test(url)) {
-          url = url.replace(/from_albums=\d+/gi, `from_albums=${page}`);
+          url = url.replace(/from_albums=\d+/gi, `from_albums=${val}`);
         }
         generated.push(url);
       } else if (/[?&](?:page|p|pg|pagination|paged)=\d+/i.test(trimmed)) {
         // Query param phổ biến: page=2, p=2, pg=2
         const url = trimmed.replace(
           /([?&](?:page|p|pg|pagination|paged)=)\d+/gi,
-          `$1${page}`
+          `$1${val}`
         );
         generated.push(url);
       } else if (/\/page\/\d+/i.test(trimmed)) {
         // Path phổ biến: /page/2/
-        const url = trimmed.replace(/\/page\/\d+/gi, `/page/${page}`);
+        const url = trimmed.replace(/\/page\/\d+/gi, `/page/${val}`);
         generated.push(url);
       } else if (/\/p\/\d+/i.test(trimmed)) {
         // Path: /p/2/
-        const url = trimmed.replace(/\/p\/\d+/gi, `/p/${page}`);
+        const url = trimmed.replace(/\/p\/\d+/gi, `/p/${val}`);
         generated.push(url);
       } else {
         // Fallback: tự động gắn ?page=N hoặc &page=N
         const separator = trimmed.includes("?") ? "&" : "?";
-        generated.push(`${trimmed}${separator}page=${page}`);
+        generated.push(`${trimmed}${separator}page=${val}`);
       }
     }
 
@@ -1363,30 +1376,49 @@ export default function AdminDashboardPage() {
                           >
                             + [page]
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPageBuilderUrl((prev) => prev ? `${prev}[offset]` : "https://example.com/api?offset=[offset]");
+                            }}
+                            title="Thêm biến [offset] vào URL (cho lazy loading)"
+                            className="px-2.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-purple-400 font-mono font-bold transition shrink-0"
+                          >
+                            + [offset]
+                          </button>
                         </div>
 
                         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-neutral-400">Từ trang:</span>
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-neutral-400">Từ:</span>
                             <input
                               type="number"
-                              min={1}
-                              max={500}
+                              min={0}
+                              max={50000}
                               value={pageBuilderFrom}
-                              onChange={(e) => setPageBuilderFrom(Math.max(1, parseInt(e.target.value) || 1))}
+                              onChange={(e) => setPageBuilderFrom(parseInt(e.target.value) || 0)}
                               className="w-16 px-2 py-1 bg-neutral-900 border border-neutral-700 rounded-md text-xs text-center text-white focus:outline-none focus:border-blue-500"
                             />
-                            <span className="text-neutral-400">Đến trang:</span>
+                            <span className="text-neutral-400">Đến:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={50000}
+                              value={pageBuilderTo}
+                              onChange={(e) => setPageBuilderTo(parseInt(e.target.value) || 0)}
+                              className="w-16 px-2 py-1 bg-neutral-900 border border-neutral-700 rounded-md text-xs text-center text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <span className="text-neutral-400">Bước nhảy (Step):</span>
                             <input
                               type="number"
                               min={1}
-                              max={500}
-                              value={pageBuilderTo}
-                              onChange={(e) => setPageBuilderTo(Math.max(1, parseInt(e.target.value) || 1))}
-                              className="w-16 px-2 py-1 bg-neutral-900 border border-neutral-700 rounded-md text-xs text-center text-white focus:outline-none focus:border-blue-500"
+                              max={1000}
+                              value={pageBuilderStep}
+                              onChange={(e) => setPageBuilderStep(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-14 px-2 py-1 bg-neutral-900 border border-neutral-700 rounded-md text-xs text-center text-white focus:outline-none focus:border-blue-500"
                             />
                             <span className="text-blue-400 font-medium">
-                              (Sẽ sinh {Math.abs(pageBuilderTo - pageBuilderFrom) + 1} link)
+                              (Sẽ sinh {Math.floor(Math.abs(pageBuilderTo - pageBuilderFrom) / Math.max(1, pageBuilderStep)) + 1} link)
                             </span>
                           </div>
 
@@ -1394,7 +1426,7 @@ export default function AdminDashboardPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                const urls = generatePaginationUrls(pageBuilderUrl, pageBuilderFrom, pageBuilderTo);
+                                const urls = generatePaginationUrls(pageBuilderUrl, pageBuilderFrom, pageBuilderTo, pageBuilderStep);
                                 if (urls.length === 0) {
                                   alert("Vui lòng nhập link mẫu hợp lệ trước khi sinh link.");
                                   return;
@@ -1409,7 +1441,7 @@ export default function AdminDashboardPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                const urls = generatePaginationUrls(pageBuilderUrl, pageBuilderFrom, pageBuilderTo);
+                                const urls = generatePaginationUrls(pageBuilderUrl, pageBuilderFrom, pageBuilderTo, pageBuilderStep);
                                 if (urls.length === 0) {
                                   alert("Vui lòng nhập link mẫu hợp lệ trước khi sinh link.");
                                   return;
