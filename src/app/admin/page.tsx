@@ -33,6 +33,7 @@ import {
   Square,
   Sparkles,
   Wand2,
+  Clock,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -84,6 +85,8 @@ export default function AdminDashboardPage() {
   const [scrapedWebTitle, setScrapedWebTitle] = useState("");
   const [isDeepCrawl, setIsDeepCrawl] = useState(false);
   const [maxDeepPerUrl, setMaxDeepPerUrl] = useState(20);
+  const [crawlDelayMs, setCrawlDelayMs] = useState(1000); // Khoảng nghỉ giữa các đợt cào (ms) chống chặn
+  const [crawlConcurrency, setCrawlConcurrency] = useState(2); // Số luồng cào đồng thời
 
   // States cho công cụ tạo dải link phân trang tự động
   const [showPaginationBuilder, setShowPaginationBuilder] = useState(false);
@@ -345,7 +348,13 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/scrape-web-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl, deepCrawl: isDeepCrawl, maxDeepPerUrl }),
+        body: JSON.stringify({
+          url: targetUrl,
+          deepCrawl: isDeepCrawl,
+          maxDeepPerUrl,
+          delayMs: crawlDelayMs,
+          concurrency: crawlConcurrency,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Không thể bóc tách media từ trang web");
@@ -1504,6 +1513,45 @@ export default function AdminDashboardPage() {
                         </select>
                       </div>
                     )}
+                  </div>
+
+                  {/* Tuỳ chọn Kiểm soát tốc độ cào & Giãn cách chống chặn IP */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-neutral-850/80 rounded-xl border border-neutral-700/60">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="text-xs font-semibold text-neutral-200">
+                        Kiểm soát tốc độ & Khoảng nghỉ (Chống máy chủ chặn bot / 429):
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs pl-6 sm:pl-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-neutral-400">Khoảng nghỉ (Delay):</span>
+                        <select
+                          value={crawlDelayMs}
+                          onChange={(e) => setCrawlDelayMs(Number(e.target.value))}
+                          className="bg-neutral-800 border border-neutral-700 text-white rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 font-medium cursor-pointer"
+                        >
+                          <option value={2000}>2.0 giây (Siêu an toàn)</option>
+                          <option value={1500}>1.5 giây (Rất an toàn)</option>
+                          <option value={1000}>1.0 giây (Khuyên dùng)</option>
+                          <option value={500}>0.5 giây (Vừa phải)</option>
+                          <option value={0}>0 giây (Nhanh tối đa)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-neutral-400">Luồng song song:</span>
+                        <select
+                          value={crawlConcurrency}
+                          onChange={(e) => setCrawlConcurrency(Number(e.target.value))}
+                          className="bg-neutral-800 border border-neutral-700 text-white rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 font-medium cursor-pointer"
+                        >
+                          <option value={1}>1 luồng (Tuần tự - Chống chặn tốt nhất)</option>
+                          <option value={2}>2 luồng (Cân bằng)</option>
+                          <option value={3}>3 luồng</option>
+                          <option value={5}>5 luồng</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

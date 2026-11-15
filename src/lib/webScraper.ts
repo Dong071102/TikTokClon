@@ -656,10 +656,20 @@ export function extractInternalDetailLinks(html: string, baseUrl: string): strin
   return Array.from(detailUrls);
 }
 
-// Bóc tách media từ nhiều URL cùng lúc (Multi-page Web Scraper)
+// Hàm sleep giúp tạo độ trễ giữa các request cào (chống quá tải & tránh bị máy chủ đích chặn bot)
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Bóc tách media từ nhiều URL cùng lúc (Multi-page Web Scraper có kiểm soát tốc độ & chống chặn)
 export async function scrapeMultipleWebUrls(
   targetUrls: string[],
-  options?: { deepCrawl?: boolean; maxDeepPerUrl?: number }
+  options?: {
+    deepCrawl?: boolean;
+    maxDeepPerUrl?: number;
+    delayMs?: number;
+    concurrency?: number;
+  }
 ): Promise<ScrapedWebResult> {
   // Lọc danh sách URL hợp lệ và loại bỏ trùng lặp URL đầu vào
   const cleanUrls = Array.from(
@@ -676,13 +686,22 @@ export async function scrapeMultipleWebUrls(
 
   const deepCrawl = Boolean(options?.deepCrawl);
   const maxDeepPerUrl = options?.maxDeepPerUrl || 20;
+  // Cấu hình kiểm soát tốc độ cào (Rate-limiting / Throttle)
+  const delayMs = typeof options?.delayMs === "number" ? options.delayMs : 1000;
+  const concurrency = Math.max(1, typeof options?.concurrency === "number" ? options.concurrency : 2);
 
   // Danh sách các URL thực tế sẽ quét (bảo đảm thứ tự hiển thị chuẩn của trang web)
   let finalUrlsToScrape: string[] = [];
   let detectedPageTitle = "";
 
   if (deepCrawl) {
-    for (const url of cleanUrls) {
+    for (let cIdx = 0; cIdx < cleanUrls.length; cIdx++) {
+      const url = cleanUrls[cIdx];
+      // Nếu có nhiều trang danh mục, nghỉ nhẹ giữa các trang để tránh bị phát hiện spam
+      if (cIdx > 0 && delayMs > 0) {
+        await sleep(Math.min(delayMs, 800));
+      }
+
       try {
         let parsedU: URL;
         try {
@@ -766,10 +785,26 @@ export async function scrapeMultipleWebUrls(
     finalUrlsToScrape = cleanUrls;
   }
 
-  // Quét đồng thời tất cả các trang web đã chuẩn bị
-  const results = await Promise.allSettled(
-    finalUrlsToScrape.map((url) => scrapeSingleWebUrl(url))
-  );
+  // Quét theo từng đợt (chunks) có kiểm soát số luồng đồng thời và khoảng nghỉ (delay) chống chặn
+  const results: PromiseSettledResult<{
+    title: string;
+    items: ScrapedMediaItem[];
+    error?: string;
+  }>[] = [];
+
+  for (let i = 0; i < finalUrlsToScrape.length; i += concurrency) {
+    const chunk = finalUrlsToScrape.slice(i, i + concurrency);
+    const chunkResults = await Promise.allSettled(
+      chunk.map((url) => scrapeSingleWebUrl(url))
+    );
+    results.push(...chunkResults);
+
+    // Nếu còn các link tiếp theo và có đặt độ trễ thì tạm nghỉ để server không chặn
+    if (i + concurrency < finalUrlsToScrape.length && delayMs > 0) {
+      const jitter = Math.floor(Math.random() * 200); // Thêm độ ngẫu nhiên tự nhiên
+      await sleep(delayMs + jitter);
+    }
+  }
 
   const pages: ScrapedPageSummary[] = [];
   const allItems: ScrapedMediaItem[] = [];

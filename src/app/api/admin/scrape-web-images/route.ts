@@ -10,7 +10,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { url, urls, deepCrawl, maxDeepPerUrl } = body;
+    const { url, urls, deepCrawl, maxDeepPerUrl, delayMs, concurrency } = body;
 
     let targetUrls: string[] = [];
 
@@ -34,6 +34,8 @@ export async function POST(request: Request) {
     const result = await scrapeMultipleWebUrls(targetUrls, {
       deepCrawl: Boolean(deepCrawl),
       maxDeepPerUrl: typeof maxDeepPerUrl === "number" ? maxDeepPerUrl : 20,
+      delayMs: typeof delayMs === "number" ? delayMs : 1000,
+      concurrency: typeof concurrency === "number" ? concurrency : 2,
     });
 
     if (result.totalFound === 0) {
