@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { useEffect, useRef, useState } from "react";
+import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from "react-zoom-pan-pinch";
 import { Maximize2, Minimize2, ZoomIn, RotateCcw, Heart } from "lucide-react";
 
 interface ImageViewerProps {
@@ -20,7 +20,17 @@ export default function ImageViewer({
   onToggleFavorite,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  // Tự động reset ảnh về kích thước gốc khi cuộn sang bài khác
+  useEffect(() => {
+    if (!isActive && transformRef.current) {
+      transformRef.current.resetTransform();
+      setIsZoomed(false);
+    }
+  }, [isActive]);
 
   const toggleFullscreen = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -41,12 +51,20 @@ export default function ImageViewer({
       className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none"
     >
       <TransformWrapper
+        ref={transformRef}
         initialScale={1}
         minScale={1}
-        maxScale={6}
+        maxScale={5}
+        // Vô hiệu hoá con lăn chuột zoom để cuộn chuột luôn luôn chuyển bài (scroll feed)
+        wheel={{ disabled: true }}
+        // Chỉ cho phép kéo ảnh (pan) khi đang phóng to (>1x) để không cản trở thao tác vuốt cuộn bài
+        panning={{ disabled: !isZoomed, velocityDisabled: true }}
+        // Hỗ trợ chụm 2 ngón trên điện thoại và nhấp đúp để phóng to/thu nhỏ
+        pinch={{ disabled: false }}
         doubleClick={{ mode: "toggle", step: 2 }}
-        wheel={{ step: 0.2 }}
-        panning={{ velocityDisabled: true }}
+        onTransformed={(ref) => {
+          setIsZoomed(ref.state.scale > 1.05);
+        }}
       >
         {({ resetTransform, zoomIn }) => (
           <>
@@ -89,6 +107,7 @@ export default function ImageViewer({
                 onClick={(e) => {
                   e.stopPropagation();
                   zoomIn();
+                  setIsZoomed(true);
                 }}
                 title="Phóng to"
                 className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
@@ -101,6 +120,7 @@ export default function ImageViewer({
                 onClick={(e) => {
                   e.stopPropagation();
                   resetTransform();
+                  setIsZoomed(false);
                 }}
                 title="Thu nhỏ về ban đầu"
                 className="p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
