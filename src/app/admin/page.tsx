@@ -460,7 +460,7 @@ export default function AdminDashboardPage() {
                         src={parsedData.mediaUrl}
                         alt="Preview"
                         referrerPolicy="no-referrer"
-                        className="w-full h-full object-contain"
+                        className="max-w-full max-h-full w-auto h-auto object-contain select-none"
                       />
                     )}
                   </div>
@@ -751,7 +751,7 @@ export default function AdminDashboardPage() {
                           src={item.mediaUrl}
                           alt={item.title || "media"}
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-contain"
+                          className="max-w-full max-h-full w-auto h-auto object-contain select-none"
                         />
                       )}
 
