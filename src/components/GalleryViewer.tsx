@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import useEmblaCarousel from "embla-carousel-react";
-import { ChevronLeft, ChevronRight, Heart, Layers } from "lucide-react";
+import { ChevronLeft, ChevronRight, Heart, Layers, LayoutGrid, X } from "lucide-react";
 
 interface GalleryViewerProps {
   images: string[];
@@ -27,6 +27,7 @@ export default function GalleryViewer({
   });
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isGridOpen, setIsGridOpen] = useState(false);
 
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
@@ -42,11 +43,12 @@ export default function GalleryViewer({
     };
   }, [emblaApi, onSelect]);
 
-  // Tự động quay về ảnh đầu tiên khi cuộn bài khác
+  // Tự động quay về ảnh đầu tiên và đóng modal khi cuộn bài khác
   useEffect(() => {
     if (!isActive && emblaApi) {
       emblaApi.scrollTo(0);
       setCurrentIndex(0);
+      setIsGridOpen(false);
     }
   }, [isActive, emblaApi]);
 
@@ -91,13 +93,21 @@ export default function GalleryViewer({
         </div>
       </div>
 
-      {/* Huy hiệu chỉ số ảnh Album (ví dụ: 1/5) ở góc trên */}
-      <div className="absolute top-16 right-4 z-30 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white text-xs font-bold tracking-wider shadow-lg flex items-center gap-1.5 pointer-events-none">
+      {/* Huy hiệu chỉ số ảnh Album (ví dụ: 1/5) - bấm vào để mở lưới chọn ảnh */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsGridOpen(true);
+        }}
+        title="Bấm để xem tất cả ảnh trong Album"
+        className="absolute top-16 right-4 z-30 px-3 py-1.5 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/20 hover:border-white/40 text-white text-xs font-bold tracking-wider shadow-lg flex items-center gap-1.5 pointer-events-auto cursor-pointer active:scale-95 transition"
+      >
         <Layers className="w-3.5 h-3.5 text-blue-400" />
         <span>
           {currentIndex + 1} / {images.length}
         </span>
-      </div>
+        <LayoutGrid className="w-3 h-3 text-neutral-400 ml-0.5" />
+      </button>
 
       {/* Nút điều hướng ảnh trước/sau trên Desktop */}
       {currentIndex > 0 && (
@@ -151,6 +161,96 @@ export default function GalleryViewer({
               }`}
             />
           </button>
+        </div>
+      )}
+      {/* MODAL / DRAWER HIỂN THỊ LƯỚI TẤT CẢ ẢNH TRONG GALLERY */}
+      {isGridOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsGridOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-xl bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl max-h-[85vh] flex flex-col space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-600/20 text-blue-400">
+                  <LayoutGrid className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white">
+                    Tất cả ảnh trong Album ({images.length})
+                  </h3>
+                  <p className="text-[11px] text-neutral-400">
+                    Chạm vào ảnh bất kỳ để chuyển nhanh tới ảnh đó
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsGridOpen(false)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition"
+                title="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Grid danh sách ảnh */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 overflow-y-auto max-h-[60vh] p-1 no-scrollbar">
+              {images.map((src, idx) => {
+                const isCurrent = idx === currentIndex;
+
+                return (
+                  <div
+                    key={`${src}-${idx}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      emblaApi?.scrollTo(idx);
+                      setCurrentIndex(idx);
+                      setIsGridOpen(false);
+                    }}
+                    className={`group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
+                      isCurrent
+                        ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/30 scale-[0.98]"
+                        : "border-neutral-800 hover:border-neutral-600 opacity-75 hover:opacity-100"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={`Thumbnail ${idx + 1}`}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover select-none pointer-events-none"
+                      loading="lazy"
+                    />
+
+                    {/* Huy hiệu số thứ tự */}
+                    <div
+                      className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-sm ${
+                        isCurrent
+                          ? "bg-blue-600 text-white shadow"
+                          : "bg-black/60 text-white/80"
+                      }`}
+                    >
+                      #{idx + 1}
+                    </div>
+
+                    {/* Nhãn đang xem */}
+                    {isCurrent && (
+                      <div className="absolute bottom-1.5 inset-x-1.5 py-0.5 rounded bg-blue-600/90 text-white text-[10px] font-bold text-center backdrop-blur-sm shadow">
+                        Đang xem
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
