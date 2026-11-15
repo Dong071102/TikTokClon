@@ -31,6 +31,8 @@ import {
   ChevronsRight,
   CheckSquare,
   Square,
+  Sparkles,
+  Wand2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -80,6 +82,12 @@ export default function AdminDashboardPage() {
   const [webScrapeUrl, setWebScrapeUrl] = useState("");
   const [isScrapingWeb, setIsScrapingWeb] = useState(false);
   const [scrapedWebTitle, setScrapedWebTitle] = useState("");
+
+  // States cho công cụ tạo dải link phân trang tự động
+  const [showPaginationBuilder, setShowPaginationBuilder] = useState(false);
+  const [pageBuilderUrl, setPageBuilderUrl] = useState("");
+  const [pageBuilderFrom, setPageBuilderFrom] = useState(1);
+  const [pageBuilderTo, setPageBuilderTo] = useState(5);
   const [scrapedPages, setScrapedPages] = useState<
     Array<{
       url: string;
@@ -254,9 +262,64 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Hàm tạo dải link phân trang thông minh
+  const generatePaginationUrls = (
+    urlTemplate: string,
+    from: number,
+    to: number
+  ): string[] => {
+    const trimmed = urlTemplate.trim();
+    if (!trimmed) return [];
+
+    const start = Math.max(1, Math.min(from, to));
+    const end = Math.max(1, Math.max(from, to));
+    const generated: string[] = [];
+
+    // 1. Kiểm tra placeholder rõ ràng: [page] hoặc {page}
+    const hasPlaceholder = /\[page\]|\{page\}/i.test(trimmed);
+
+    for (let page = start; page <= end; page++) {
+      if (hasPlaceholder) {
+        generated.push(trimmed.replace(/\[page\]|\{page\}/gi, String(page)));
+      } else if (/from_videos=\d+|from_albums=\d+/i.test(trimmed)) {
+        // KVS CMS AJAX pattern (như abc.pink, xnhau...)
+        let url = trimmed;
+        if (/from_videos=\d+/i.test(url)) {
+          url = url.replace(/from_videos=\d+/gi, `from_videos=${page}`);
+        }
+        if (/from_albums=\d+/i.test(url)) {
+          url = url.replace(/from_albums=\d+/gi, `from_albums=${page}`);
+        }
+        generated.push(url);
+      } else if (/[?&](?:page|p|pg|pagination|paged)=\d+/i.test(trimmed)) {
+        // Query param phổ biến: page=2, p=2, pg=2
+        const url = trimmed.replace(
+          /([?&](?:page|p|pg|pagination|paged)=)\d+/gi,
+          `$1${page}`
+        );
+        generated.push(url);
+      } else if (/\/page\/\d+/i.test(trimmed)) {
+        // Path phổ biến: /page/2/
+        const url = trimmed.replace(/\/page\/\d+/gi, `/page/${page}`);
+        generated.push(url);
+      } else if (/\/p\/\d+/i.test(trimmed)) {
+        // Path: /p/2/
+        const url = trimmed.replace(/\/p\/\d+/gi, `/p/${page}`);
+        generated.push(url);
+      } else {
+        // Fallback: tự động gắn ?page=N hoặc &page=N
+        const separator = trimmed.includes("?") ? "&" : "?";
+        generated.push(`${trimmed}${separator}page=${page}`);
+      }
+    }
+
+    return generated;
+  };
+
   // 1.2 Xử lý Quét & Bóc tách Media (Ảnh & Video) từ Web (Hỗ trợ nhiều trang cùng lúc)
-  const handleScrapeWeb = async () => {
-    if (!webScrapeUrl.trim()) return;
+  const handleScrapeWeb = async (overrideUrl?: string | unknown) => {
+    const targetUrl = typeof overrideUrl === "string" ? overrideUrl : webScrapeUrl;
+    if (!targetUrl.trim()) return;
     setIsScrapingWeb(true);
     setWebScrapeMsg(null);
     setScrapedMediaItems([]);
@@ -267,7 +330,7 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/scrape-web-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: webScrapeUrl }),
+        body: JSON.stringify({ url: targetUrl }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Không thể bóc tách media từ trang web");
@@ -1246,10 +1309,127 @@ export default function AdminDashboardPage() {
                 )}
 
                 <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {/* Tiêu đề & Nút bật công cụ phân trang */}
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider">
                       Đường dẫn các trang web (Mỗi link 1 dòng)
                     </label>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!showPaginationBuilder && !pageBuilderUrl && webScrapeUrl) {
+                          setPageBuilderUrl(webScrapeUrl.split(/[\r\n,]+/)[0].trim());
+                        }
+                        setShowPaginationBuilder(!showPaginationBuilder);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 hover:text-blue-300 border border-blue-500/30 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      <span>{showPaginationBuilder ? "Đóng công cụ phân trang" : "⚡ Tự động tạo dải link (Trang 1 -> N)"}</span>
+                    </button>
+                  </div>
+
+                  {/* Panel Công cụ sinh link phân trang tự động */}
+                  {showPaginationBuilder && (
+                    <div className="p-4 bg-blue-950/20 border border-blue-500/30 rounded-xl space-y-3 animate-in fade-in zoom-in-98 duration-150">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+                          <Wand2 className="w-4 h-4 text-blue-400" />
+                          <span>Công cụ sinh dải link phân trang hàng loạt</span>
+                        </span>
+                        <span className="text-[11px] text-neutral-400">
+                          Hỗ trợ query `from_videos=N`, `page=N`, path `/page/N/` hoặc dùng ký hiệu `[page]`
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Dán link mẫu vào đây (ví dụ: https://abc.pink/search/...?from_videos=1 hoặc dùng [page])"
+                            value={pageBuilderUrl}
+                            onChange={(e) => setPageBuilderUrl(e.target.value)}
+                            className="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPageBuilderUrl((prev) => prev ? `${prev}[page]` : "https://example.com/page/[page]");
+                            }}
+                            title="Thêm biến [page] vào URL"
+                            className="px-2.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-blue-400 font-mono font-bold transition shrink-0"
+                          >
+                            + [page]
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-neutral-400">Từ trang:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={500}
+                              value={pageBuilderFrom}
+                              onChange={(e) => setPageBuilderFrom(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-16 px-2 py-1 bg-neutral-900 border border-neutral-700 rounded-md text-xs text-center text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <span className="text-neutral-400">Đến trang:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={500}
+                              value={pageBuilderTo}
+                              onChange={(e) => setPageBuilderTo(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-16 px-2 py-1 bg-neutral-900 border border-neutral-700 rounded-md text-xs text-center text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <span className="text-blue-400 font-medium">
+                              (Sẽ sinh {Math.abs(pageBuilderTo - pageBuilderFrom) + 1} link)
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const urls = generatePaginationUrls(pageBuilderUrl, pageBuilderFrom, pageBuilderTo);
+                                if (urls.length === 0) {
+                                  alert("Vui lòng nhập link mẫu hợp lệ trước khi sinh link.");
+                                  return;
+                                }
+                                setWebScrapeUrl(urls.join("\n"));
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition active:scale-95"
+                            >
+                              Điền vào ô danh sách
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const urls = generatePaginationUrls(pageBuilderUrl, pageBuilderFrom, pageBuilderTo);
+                                if (urls.length === 0) {
+                                  alert("Vui lòng nhập link mẫu hợp lệ trước khi sinh link.");
+                                  return;
+                                }
+                                const urlString = urls.join("\n");
+                                setWebScrapeUrl(urlString);
+                                handleScrapeWeb(urlString);
+                              }}
+                              disabled={isScrapingWeb}
+                              className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold transition active:scale-95 flex items-center gap-1 shadow-md shadow-blue-600/20"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Sinh link & Quét luôn</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
                     <textarea
                       rows={3}
                       placeholder="Dán 1 hoặc nhiều link trang web (mỗi link trên 1 dòng hoặc cách nhau bằng dấu phẩy)&#10;https://example.com/gallery/page-1&#10;https://example.com/gallery/page-2&#10;https://example.com/gallery/page-3"
@@ -1265,7 +1445,7 @@ export default function AdminDashboardPage() {
                     </span>
                     <button
                       type="button"
-                      onClick={handleScrapeWeb}
+                      onClick={() => handleScrapeWeb()}
                       disabled={isScrapingWeb || !webScrapeUrl.trim()}
                       className="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 shrink-0"
                     >
