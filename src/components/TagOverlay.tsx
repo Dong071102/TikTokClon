@@ -1,6 +1,7 @@
 "use client";
 
-import { Tag as TagIcon, X } from "lucide-react";
+import { useState } from "react";
+import { Tag as TagIcon, ExternalLink } from "lucide-react";
 
 interface TagOverlayProps {
   title?: string | null;
@@ -10,6 +11,32 @@ interface TagOverlayProps {
   onOpenTagDrawer: () => void;
 }
 
+// Hàm phân tích và chuyển đổi URL thành Hyperlink có thể nhấp trực tiếp
+function renderTextWithLinks(text: string) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title={`Mở liên kết: ${part}`}
+          className="text-blue-400 hover:text-blue-300 hover:underline underline-offset-2 break-all font-semibold inline-flex items-center gap-0.5 mx-0.5 pointer-events-auto bg-blue-500/10 px-1 py-0.5 rounded border border-blue-400/20"
+        >
+          <span>{part}</span>
+          <ExternalLink className="w-3 h-3 inline-block shrink-0" />
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 export default function TagOverlay({
   title,
   tags,
@@ -17,13 +44,35 @@ export default function TagOverlay({
   onSelectTag,
   onOpenTagDrawer,
 }: TagOverlayProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
-    <div className="absolute left-0 bottom-0 right-16 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-20 flex flex-col justify-end">
-      {/* Tiêu đề nếu có */}
+    <div className="absolute left-0 bottom-0 right-16 p-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none z-20 flex flex-col justify-end max-w-xl">
+      {/* Tiêu đề & Hyperlinks nếu có */}
       {title && (
-        <p className="text-white text-sm font-medium line-clamp-2 mb-2 drop-shadow-md pointer-events-auto">
-          {title}
-        </p>
+        <div className="text-white text-xs sm:text-sm font-medium mb-2 drop-shadow-md pointer-events-auto leading-relaxed">
+          <div
+            className={
+              isExpanded
+                ? "whitespace-pre-line max-h-48 overflow-y-auto no-scrollbar bg-black/40 p-2 rounded-xl backdrop-blur-sm border border-white/10"
+                : "line-clamp-2"
+            }
+          >
+            {renderTextWithLinks(title)}
+          </div>
+
+          {(title.length > 80 || title.includes("\n")) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded((prev) => !prev);
+              }}
+              className="text-neutral-300 hover:text-white text-[11px] font-semibold mt-1 underline underline-offset-2 inline-block bg-black/30 px-1.5 py-0.5 rounded"
+            >
+              {isExpanded ? "Thu gọn ▲" : "Xem thêm ▼"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Danh sách Tags */}

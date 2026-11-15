@@ -22,6 +22,32 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+function renderAdminTextWithLinks(text?: string | null) {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Mở trang: ${part}`}
+          className="text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all font-semibold inline-flex items-center gap-0.5 mx-0.5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span>{part}</span>
+          <ExternalLink className="w-3 h-3 inline-block shrink-0" />
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"link" | "upload" | "list">("link");
@@ -442,6 +468,14 @@ export default function AdminDashboardPage() {
                   {/* Form Cấu hình */}
                   <div className="space-y-4 flex flex-col justify-between">
                     <div className="space-y-4">
+                      {/* Tiêu đề / Nội dung bài viết từ link */}
+                      {parsedData.title && (
+                        <div className="p-3 bg-neutral-800/80 border border-neutral-700/80 rounded-xl text-xs text-neutral-300 leading-relaxed whitespace-pre-line">
+                          <span className="font-bold text-neutral-400 block mb-1">Nội dung bài viết & Hyperlink:</span>
+                          {renderAdminTextWithLinks(parsedData.title)}
+                        </div>
+                      )}
+
                       {/* Chọn chế độ lưu trữ */}
                       <div>
                         <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
@@ -748,9 +782,11 @@ export default function AdminDashboardPage() {
                     {/* Metadata & Actions */}
                     <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                       <div className="space-y-1">
-                        <p className="text-xs text-neutral-300 line-clamp-1">
-                          {item.title || "Không có tiêu đề"}
-                        </p>
+                        <div className="text-xs text-neutral-300 line-clamp-2 leading-relaxed">
+                          {renderAdminTextWithLinks(item.title) || (
+                            <span className="text-neutral-500 italic">Không có tiêu đề</span>
+                          )}
+                        </div>
                         {editingTagsId === item.id ? (
                           <div className="space-y-1.5 pt-1">
                             <input
