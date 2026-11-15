@@ -1,3 +1,5 @@
+import { scrapeSingleWebUrl } from "./webScraper";
+
 export interface ExtractedMedia {
   sourceType: "X_TWITTER" | "TIKTOK" | "INSTAGRAM" | "YOUTUBE" | "DIRECT_LINK";
   type: "IMAGE" | "VIDEO";
@@ -202,7 +204,47 @@ export async function extractMediaFromUrl(rawUrl: string): Promise<ExtractedMedi
   const direct = extractDirectMedia(url);
   if (direct) return direct;
 
-  // 4. Nếu không nhận dạng được nền tảng đặc thù, thử trả về direct link mặc định
+  // 4. Nếu là trang web bất kỳ (blog, video tube, báo chí, diễn đàn...), dùng webScraper để trích xuất media thật
+  try {
+    const scraped = await scrapeSingleWebUrl(url);
+    if (scraped.items && scraped.items.length > 0) {
+      // Ưu tiên video nếu có
+      const firstVideo = scraped.items.find((i) => i.type === "VIDEO");
+      if (firstVideo) {
+        return {
+          sourceType: "DIRECT_LINK",
+          type: "VIDEO",
+          mediaUrl: firstVideo.url,
+          thumbnailUrl: firstVideo.thumbnailUrl,
+          title: scraped.title,
+          allMedia: scraped.items.map((i) => ({
+            type: i.type,
+            mediaUrl: i.url,
+            thumbnailUrl: i.thumbnailUrl,
+          })),
+        };
+      }
+
+      // Nếu không có video thì lấy ảnh đầu tiên
+      const firstImage = scraped.items[0];
+      return {
+        sourceType: "DIRECT_LINK",
+        type: "IMAGE",
+        mediaUrl: firstImage.url,
+        thumbnailUrl: firstImage.thumbnailUrl || firstImage.url,
+        title: scraped.title,
+        allMedia: scraped.items.map((i) => ({
+          type: i.type,
+          mediaUrl: i.url,
+          thumbnailUrl: i.thumbnailUrl,
+        })),
+      };
+    }
+  } catch (err) {
+    console.warn("[EXTRACTOR] Fallback scrape failed:", err);
+  }
+
+  // 5. Fallback cuối cùng
   return {
     sourceType: "DIRECT_LINK",
     type: url.includes(".mp4") || url.includes("video") ? "VIDEO" : "IMAGE",

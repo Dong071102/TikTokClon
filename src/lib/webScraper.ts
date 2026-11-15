@@ -152,6 +152,72 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
       if (embVMatch[0]) videoCandidates.set(embVMatch[0].trim(), undefined);
     }
 
+    // 5.5. Trích xuất VIDEO từ IFRAME Embed Player (Rất phổ biến ở các trang video nhúng bảo mật)
+    const iframeUrls = new Set<string>();
+
+    // 5.5.1 Thẻ <meta itemprop="embedURL" content="...">
+    const embedUrlMetaRegex =
+      /<meta[^>]+(?:itemprop|property|name)=["'](?:embedURL|embedUrl|twitter:player)["'][^>]+content=["']([^"']+)["']/gi;
+    let euMatch;
+    while ((euMatch = embedUrlMetaRegex.exec(html)) !== null) {
+      if (euMatch[1]) iframeUrls.add(euMatch[1].trim());
+    }
+
+    // 5.5.2 Thẻ <iframe src="..." data-src="...">
+    const iframeTagRegex = /<iframe\s+[^>]*>/gi;
+    const iframeTags = html.match(iframeTagRegex) || [];
+    for (const tag of iframeTags) {
+      const srcMatch = tag.match(/(?:src|data-src|data-lazy-src)=["']([^"']+)["']/i);
+      if (srcMatch && srcMatch[1]) {
+        const u = srcMatch[1].trim();
+        if (u && !u.startsWith("about:") && !u.startsWith("javascript:")) {
+          iframeUrls.add(u);
+        }
+      }
+    }
+
+    // Đào sâu vào từng iframe embed player để trích xuất file video thật (JWPlayer, HLS m3u8, mp4...)
+    for (const rawIframeUrl of Array.from(iframeUrls)) {
+      try {
+        let fullIframeUrl = rawIframeUrl;
+        if (fullIframeUrl.startsWith("//")) {
+          fullIframeUrl = `${parsedUrl.protocol}${fullIframeUrl}`;
+        } else if (fullIframeUrl.startsWith("/")) {
+          fullIframeUrl = `${parsedUrl.origin}${fullIframeUrl}`;
+        }
+
+        const iframeRes = await fetch(fullIframeUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Referer: parsedUrl.href,
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (iframeRes.ok) {
+          const iframeHtml = await iframeRes.text();
+
+          // 1. Tìm video file trong JWPlayer setup: file: "https://...m3u8"
+          const jwFileRegex = /(?:file|source|src)\s*:\s*["']([^"']+\.(?:mp4|webm|m3u8)(?:\?[^"']*)?)["']/gi;
+          let jwMatch;
+          while ((jwMatch = jwFileRegex.exec(iframeHtml)) !== null) {
+            if (jwMatch[1]) videoCandidates.set(jwMatch[1].trim(), undefined);
+          }
+
+          // 2. Quét regex các link .m3u8 hoặc .mp4 nhúng trong mã script của iframe
+          const vidRegex =
+            /https?:\/\/[^\s"'<>\\]+?\.(?:mp4|webm|m4v|m3u8)(?:\?[^\s"'<>\\]*)?/gi;
+          let mMatch;
+          while ((mMatch = vidRegex.exec(iframeHtml)) !== null) {
+            if (mMatch[0]) videoCandidates.set(mMatch[0].trim(), undefined);
+          }
+        }
+      } catch (iframeErr) {
+        // Bỏ qua nếu iframe không truy cập được
+      }
+    }
+
     // 6. Trích xuất ẢNH: OpenGraph & Twitter Card images
     const metaRegex =
       /<meta[^>]+(?:property|name)=["'](?:og:image|og:image:url|twitter:image|twitter:image:src)["'][^>]+content=["']([^"']+)["']/gi;
