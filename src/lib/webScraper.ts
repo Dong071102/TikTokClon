@@ -92,6 +92,17 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
       }
     }
 
+    // 1.1 Tìm thumbnail chính của trang (og:image) làm poster dự phòng cho video
+    let defaultPoster: string | undefined = undefined;
+    const ogImgMatch = html.match(
+      /<meta[^>]+(?:property|name)=["'](?:og:image|og:image:url|twitter:image)["'][^>]+content=["']([^"']+)["']/i
+    ) || html.match(
+      /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|og:image:url|twitter:image)["']/i
+    );
+    if (ogImgMatch && ogImgMatch[1]) {
+      defaultPoster = ogImgMatch[1].trim();
+    }
+
     const imageCandidates = new Set<string>();
     const videoCandidates = new Map<string, string | undefined>(); // videoUrl -> poster/thumbnailUrl
 
@@ -163,14 +174,21 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
       if (euMatch[1]) iframeUrls.add(euMatch[1].trim());
     }
 
-    // 5.5.2 Thẻ <iframe src="..." data-src="...">
+    // 5.5.2 Thẻ <iframe src="..." data-src="..."> (Hỗ trợ lazy-loading iframe)
     const iframeTagRegex = /<iframe\s+[^>]*>/gi;
     const iframeTags = html.match(iframeTagRegex) || [];
     for (const tag of iframeTags) {
-      const srcMatch = tag.match(/(?:src|data-src|data-lazy-src)=["']([^"']+)["']/i);
-      if (srcMatch && srcMatch[1]) {
-        const u = srcMatch[1].trim();
-        if (u && !u.startsWith("about:") && !u.startsWith("javascript:")) {
+      // Quét tất cả các thuộc tính chứa URL trong iframe (không bỏ sót lazy-load)
+      const attrRegex = /(?:src|data-src|data-lazy-src|data-original|data-url)=["']([^"']+)["']/gi;
+      let aMatch;
+      while ((aMatch = attrRegex.exec(tag)) !== null) {
+        const u = aMatch[1].trim();
+        if (
+          u &&
+          !u.startsWith("about:") &&
+          !u.startsWith("javascript:") &&
+          (u.startsWith("http://") || u.startsWith("https://") || u.startsWith("//") || u.startsWith("/"))
+        ) {
           iframeUrls.add(u);
         }
       }
@@ -202,7 +220,7 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
           const jwFileRegex = /(?:file|source|src)\s*:\s*["']([^"']+\.(?:mp4|webm|m3u8)(?:\?[^"']*)?)["']/gi;
           let jwMatch;
           while ((jwMatch = jwFileRegex.exec(iframeHtml)) !== null) {
-            if (jwMatch[1]) videoCandidates.set(jwMatch[1].trim(), undefined);
+            if (jwMatch[1]) videoCandidates.set(jwMatch[1].trim(), defaultPoster);
           }
 
           // 2. Quét regex các link .m3u8 hoặc .mp4 nhúng trong mã script của iframe
@@ -210,7 +228,7 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
             /https?:\/\/[^\s"'<>\\]+?\.(?:mp4|webm|m4v|m3u8)(?:\?[^\s"'<>\\]*)?/gi;
           let mMatch;
           while ((mMatch = vidRegex.exec(iframeHtml)) !== null) {
-            if (mMatch[0]) videoCandidates.set(mMatch[0].trim(), undefined);
+            if (mMatch[0]) videoCandidates.set(mMatch[0].trim(), defaultPoster);
           }
         }
       } catch (iframeErr) {
@@ -367,7 +385,7 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
   }
 }
 
-// Trích xuất các liên kết bài viết chi tiết từ trang danh mục / danh sách (Loại bỏ 100% link quảng cáo)
+// Trích xuất các liên kết bài viết chi tiết từ trang danh mục / danh sách (Loại bỏ 100% link quảng cáo & menu điều hướng)
 export function extractInternalDetailLinks(html: string, baseUrl: string): string[] {
   let parsedBase: URL;
   try {
@@ -376,13 +394,26 @@ export function extractInternalDetailLinks(html: string, baseUrl: string): strin
     return [];
   }
 
-  const aRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>/gi;
+  // Loại bỏ các khối thanh điều hướng header/nav để không quét nhầm link danh mục trên cùng của trang
+  const contentOnlyHtml = html
+    .replace(/<header\b[\s\S]*?<\/header>/gi, "")
+    .replace(/<nav\b[\s\S]*?<\/nav>/gi, "")
+    .replace(/<div\s+[^>]*(?:navbar|header-nav|menu-top|navigation)[^>]*>[\s\S]*?<\/div>/gi, "");
+
+  // Quét cả thẻ <a>, <div>, <article>, <li> có chứa href, data-href, data-url theo đúng thứ tự DOM
+  const aRegex = /<(?:a|div|article|li)\s+[^>]*(?:href|data-href|data-url)=["']([^"']+)["'][^>]*>/gi;
   const detailUrls = new Set<string>();
   let match;
 
-  while ((match = aRegex.exec(html)) !== null) {
+  while ((match = aRegex.exec(contentOnlyHtml)) !== null) {
     const raw = match[1].trim();
-    if (!raw || raw.startsWith("#") || raw.startsWith("javascript:") || raw.startsWith("mailto:")) {
+    if (
+      !raw ||
+      raw.startsWith("#") ||
+      raw.startsWith("javascript:") ||
+      raw.startsWith("mailto:") ||
+      raw.startsWith("tel:")
+    ) {
       continue;
     }
 
@@ -393,31 +424,60 @@ export function extractInternalDetailLinks(html: string, baseUrl: string): strin
 
       const path = u.pathname.toLowerCase();
 
-      // Bỏ qua trang điều hướng tĩnh, phân trang hoặc trang quản trị
+      // Bỏ qua file tĩnh
+      if (path.match(/\.(css|js|json|xml|ico|svg|png|jpe?g|webp|gif|woff2?|ttf|map)$/i)) {
+        continue;
+      }
+
+      // Bỏ qua trang hệ thống tĩnh, đăng nhập, điều khoản
       if (
         path === "/" ||
-        path.includes("/category/") ||
-        path.includes("/chuyen-muc/") ||
-        path.includes("/the-loai/") ||
-        path.includes("/tag/") ||
-        path.includes("/tags/") ||
-        path.includes("/page/") ||
-        path.includes("/author/") ||
-        path.includes("/search/") ||
-        path.includes("/login") ||
-        path.includes("/register") ||
-        path.includes("/wp-admin") ||
-        path.match(/\.(css|js|json|xml|ico|svg|png|jpg|webp)$/i)
+        path === "/login" ||
+        path === "/register" ||
+        path.startsWith("/wp-admin") ||
+        path.startsWith("/wp-login") ||
+        path.startsWith("/category/") ||
+        path.startsWith("/chuyen-muc/") ||
+        path.startsWith("/the-loai/") ||
+        path.startsWith("/tag/") ||
+        path.startsWith("/tags/") ||
+        path.startsWith("/author/") ||
+        path.startsWith("/search/") ||
+        path.includes("/cart") ||
+        path.includes("/checkout") ||
+        path.includes("/privacy-policy") ||
+        path.includes("/terms") ||
+        path.includes("/contact") ||
+        path.includes("/about-us")
       ) {
         continue;
       }
 
-      // Nhận diện link bài viết chi tiết:
-      // - Kết thúc bằng ID: /\d+\/?$/ (như /.../53440/)
-      // - Chứa từ khóa bài viết: /video/, /phim/, /clip/, /watch/, /album/, /post/, /view/
-      const isPost =
-        /\/\d+\/?$/.test(u.pathname) ||
-        /(?:video|phim|clip|watch|album|post|view|detail|p)\//i.test(u.pathname);
+      // Bỏ qua link phân trang thuần túy của chính danh mục đang xem (ví dụ /page/2/ hoặc ?page=2)
+      const isPurePagination =
+        /^\/page\/\d+\/?$/.test(path) ||
+        (path === parsedBase.pathname && u.searchParams.has("page"));
+
+      if (isPurePagination) {
+        continue;
+      }
+
+      // Nhận diện link bài viết chi tiết / video item:
+      // 1. Kết thúc bằng số ID bài viết: /\d{2,}\/?$/ (như /.../53440/)
+      // 2. Chứa từ khóa bài viết/video theo cấu trúc subpath: /video/, /clip/, /watch/, /album/, /post/, /detail/
+      // 3. Có đuôi file bài viết: .html, .htm, .php với tên bài
+      // 4. Có query bài viết/video: ?v=, ?id=, ?viewkey=
+      // 5. Đường dẫn có từ 2 cấp trở lên chứa số ID
+      const hasId = /\/\d{2,}\/?$/.test(path);
+      const hasVideoSubpath = /\/(?:video|clip|watch|post|detail|film|album)\/[^\/]+/i.test(path);
+      const hasPostExt = /\/[a-z0-9_-]+\.(?:html?|php)$/i.test(path);
+      const hasVideoQuery =
+        u.searchParams.has("v") || u.searchParams.has("id") || u.searchParams.has("viewkey");
+
+      const slugParts = path.split("/").filter(Boolean);
+      const isMultiSegmentPost = slugParts.length >= 2 && /\d+/.test(path);
+
+      const isPost = hasId || hasVideoSubpath || hasPostExt || hasVideoQuery || isMultiSegmentPost;
 
       if (isPost && u.href !== parsedBase.href) {
         detailUrls.add(u.href);
@@ -451,8 +511,9 @@ export async function scrapeMultipleWebUrls(
   const deepCrawl = Boolean(options?.deepCrawl);
   const maxDeepPerUrl = options?.maxDeepPerUrl || 20;
 
-  // Nếu bật chế độ Deep Crawl: tìm các link bài viết chi tiết từ mỗi trang danh mục
+  // Danh sách các URL thực tế sẽ quét (bảo đảm thứ tự hiển thị chuẩn của trang web)
   let finalUrlsToScrape: string[] = [];
+  let detectedPageTitle = "";
 
   if (deepCrawl) {
     for (const url of cleanUrls) {
@@ -467,25 +528,57 @@ export async function scrapeMultipleWebUrls(
 
         if (res.ok) {
           const html = await res.text();
+
+          // Lấy tiêu đề trang danh mục làm fallback
+          const tMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          if (tMatch && tMatch[1] && !detectedPageTitle) {
+            detectedPageTitle = tMatch[1].trim();
+          }
+
           const detailLinks = extractInternalDetailLinks(html, url);
+
+          // Kiểm tra xem chính URL này có phải là 1 bài viết chi tiết chứa video player hay không
+          // (Ví dụ user dán trực tiếp link bài viết vào và bật cào sâu)
+          const hasDirectMedia =
+            /<(?:video\b)/i.test(html) ||
+            /<meta[^>]+(?:property|name)=["'](?:og:video|twitter:player:stream)["']/i.test(html) ||
+            /itemprop=["'](?:embedURL|embedUrl)["']/i.test(html) ||
+            /\/\d{3,}\/?$/.test(new URL(url).pathname);
+
+          // Nếu chính trang này có video, luôn đưa chính nó vào vị trí đầu tiên
+          if (hasDirectMedia) {
+            if (!finalUrlsToScrape.includes(url)) {
+              finalUrlsToScrape.push(url);
+            }
+          }
+
           if (detailLinks.length > 0) {
-            finalUrlsToScrape.push(...detailLinks.slice(0, maxDeepPerUrl));
-          } else {
+            // Lấy các bài viết chi tiết con theo đúng thứ tự DOM (bài đầu tiên trên web sẽ đứng đầu)
+            const sliced = detailLinks.slice(0, maxDeepPerUrl);
+            for (const dUrl of sliced) {
+              if (!finalUrlsToScrape.includes(dUrl)) {
+                finalUrlsToScrape.push(dUrl);
+              }
+            }
+          } else if (!finalUrlsToScrape.includes(url)) {
             finalUrlsToScrape.push(url);
           }
         } else {
-          finalUrlsToScrape.push(url);
+          if (!finalUrlsToScrape.includes(url)) {
+            finalUrlsToScrape.push(url);
+          }
         }
       } catch {
-        finalUrlsToScrape.push(url);
+        if (!finalUrlsToScrape.includes(url)) {
+          finalUrlsToScrape.push(url);
+        }
       }
     }
-    finalUrlsToScrape = Array.from(new Set(finalUrlsToScrape));
   } else {
     finalUrlsToScrape = cleanUrls;
   }
 
-  // Quét đồng thời tất cả các trang web
+  // Quét đồng thời tất cả các trang web đã chuẩn bị
   const results = await Promise.allSettled(
     finalUrlsToScrape.map((url) => scrapeSingleWebUrl(url))
   );
@@ -494,9 +587,10 @@ export async function scrapeMultipleWebUrls(
   const allItems: ScrapedMediaItem[] = [];
   const seenMediaUrls = new Set<string>();
 
-  let mainTitle = "";
+  let mainTitle = detectedPageTitle;
 
-  cleanUrls.forEach((url, idx) => {
+  // LƯỢT QUÉT QUA TOÀN BỘ finalUrlsToScrape (KHÔNG BỎ SÓT BẤT KỲ BÀI VIẾT NÀO)
+  finalUrlsToScrape.forEach((url, idx) => {
     const res = results[idx];
     if (res.status === "fulfilled") {
       const pageData = res.value;

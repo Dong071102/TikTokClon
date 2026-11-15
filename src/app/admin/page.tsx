@@ -83,6 +83,7 @@ export default function AdminDashboardPage() {
   const [isScrapingWeb, setIsScrapingWeb] = useState(false);
   const [scrapedWebTitle, setScrapedWebTitle] = useState("");
   const [isDeepCrawl, setIsDeepCrawl] = useState(false);
+  const [maxDeepPerUrl, setMaxDeepPerUrl] = useState(20);
 
   // States cho công cụ tạo dải link phân trang tự động
   const [showPaginationBuilder, setShowPaginationBuilder] = useState(false);
@@ -344,7 +345,7 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/scrape-web-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl, deepCrawl: isDeepCrawl }),
+        body: JSON.stringify({ url: targetUrl, deepCrawl: isDeepCrawl, maxDeepPerUrl }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Không thể bóc tách media từ trang web");
@@ -495,7 +496,7 @@ export default function AdminDashboardPage() {
         sourceUrl: v.sourceUrl,
         mediaUrl: v.url,
         thumbnailUrl: v.thumbnailUrl || null,
-        title: webGalleryTitle.trim() || v.pageTitle || scrapedWebTitle || null,
+        title: (selectedVideos.length > 1 ? v.pageTitle : webGalleryTitle.trim()) || v.pageTitle || webGalleryTitle.trim() || scrapedWebTitle || null,
         storageMode: webStorageMode,
         tags,
       }));
@@ -1473,7 +1474,7 @@ export default function AdminDashboardPage() {
                   </div>
 
                   {/* Tuỳ chọn Deep Crawl */}
-                  <div className="flex items-center gap-2 p-2.5 bg-neutral-850/80 rounded-xl border border-neutral-700/60">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-neutral-850/80 rounded-xl border border-neutral-700/60">
                     <label className="flex items-center gap-2.5 cursor-pointer select-none text-xs text-neutral-300 hover:text-white transition">
                       <input
                         type="checkbox"
@@ -1484,10 +1485,25 @@ export default function AdminDashboardPage() {
                       <span className="font-semibold text-blue-400">
                         🔍 Cào sâu vào các bài viết con (Deep Crawl)
                       </span>
-                      <span className="text-[11px] text-neutral-400">
-                        — Tự động chui vào từng bài viết trong danh mục/tìm kiếm để trích xuất video & iframe ẩn, bỏ qua 100% link quảng cáo rác.
+                      <span className="text-[11px] text-neutral-400 hidden md:inline">
+                        — Tự động lấy tất cả video theo đúng thứ tự (bắt đầu từ video đầu tiên của list).
                       </span>
                     </label>
+                    {isDeepCrawl && (
+                      <div className="flex items-center gap-1.5 text-xs text-neutral-400 pl-6 sm:pl-0">
+                        <span>Giới hạn:</span>
+                        <select
+                          value={maxDeepPerUrl}
+                          onChange={(e) => setMaxDeepPerUrl(Number(e.target.value))}
+                          className="bg-neutral-800 border border-neutral-700 text-white rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+                        >
+                          <option value={10}>10 bài / trang</option>
+                          <option value={20}>20 bài / trang</option>
+                          <option value={40}>40 bài / trang</option>
+                          <option value={60}>60 bài / trang</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
