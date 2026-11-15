@@ -21,6 +21,7 @@ export default function AdminLoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ identifier, password }),
       });
 
@@ -29,8 +30,9 @@ export default function AdminLoginPage() {
         throw new Error(data.error || "Đăng nhập thất bại");
       }
 
-      router.push("/admin");
-      router.refresh();
+      // Dùng window.location.href để đảm bảo trình duyệt di động (iOS Safari / Android Chrome)
+      // ghi nhận cookie vào storage trước khi chuyển trang
+      window.location.href = "/admin";
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -85,16 +85,18 @@ export default function AdminDashboardPage() {
 
   // Kiểm tra auth
   useEffect(() => {
-    fetch("/api/auth/me")
+    fetch("/api/auth/me", { credentials: "include" })
       .then((res) => {
-        if (!res.ok) router.push("/admin/login");
+        if (!res.ok) window.location.href = "/admin/login";
         return res.json();
       })
       .then((data) => {
         if (data?.authenticated) setUser(data.user);
       })
-      .catch(() => router.push("/admin/login"));
-  }, [router]);
+      .catch(() => {
+        window.location.href = "/admin/login";
+      });
+  }, []);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });

@@ -40,10 +40,15 @@ export async function POST(request: Request) {
       user: { id: admin.id, email: admin.email, username: admin.username },
     });
 
-    // Set HTTP-only Cookie
+    const isHttps =
+      request.headers.get("x-forwarded-proto") === "https" ||
+      request.url.startsWith("https://");
+
+    // Set Cookie: Chỉ bật Secure khi thực sự chạy trên HTTPS
+    // Giúp điện thoại truy cập qua mạng LAN/IP (HTTP) lưu được cookie mà không bị trình duyệt mobile từ chối
     response.cookies.set("tiktok_admin_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60, // 7 days
       path: "/",
