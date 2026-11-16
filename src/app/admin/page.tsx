@@ -1334,7 +1334,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Quét kiểm tra trạng thái HTTP của các video trên máy chủ (chạy song song 25 luồng Range GET)
+  // Quét kiểm tra trạng thái HTTP của TOÀN BỘ video trên hệ thống (chạy song song 40 luồng Range GET)
   const handleScanUnplayableVideos = async () => {
     setIsScanningUnplayable(true);
     setBulkActionMsg(null);
@@ -1342,7 +1342,7 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/media/cleanup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "SCAN_UNPLAYABLE_VIDEOS", limit: 300 }),
+        body: JSON.stringify({ action: "SCAN_UNPLAYABLE_VIDEOS", scanAll: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Lỗi quét video");
@@ -1354,12 +1354,12 @@ export default function AdminDashboardPage() {
       if (deadIds.length > 0) {
         setBulkActionMsg({
           type: "success",
-          text: `Đã quét ${data.scannedCount} video${sec}: Phát hiện ${deadIds.length} video bị lỗi kết nối hoặc link chết!`,
+          text: `Đã quét TOÀN BỘ ${data.scannedCount} video${sec}: Phát hiện ${deadIds.length} video bị lỗi kết nối hoặc link chết trên toàn hệ thống!`,
         });
       } else {
         setBulkActionMsg({
           type: "success",
-          text: `Đã quét ${data.scannedCount} video${sec}: Tất cả video đều có thể phát bình thường! Không có video lỗi.`,
+          text: `Đã quét TOÀN BỘ ${data.scannedCount} video${sec}: Tất cả video đều có thể phát bình thường! Không có video lỗi.`,
         });
       }
     } catch (err: any) {
@@ -1369,13 +1369,13 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Xóa tất cả video không thể phát phát hiện được trên trang
+  // Xóa tất cả video không thể phát phát hiện được trên toàn hệ thống
   const handleDeleteAllUnplayableVideos = async () => {
     if (unplayableVideoIds.length === 0) {
-      alert("Không có video lỗi nào được phát hiện trên trang này.");
+      alert("Không có video lỗi nào được phát hiện trên hệ thống.");
       return;
     }
-    if (!confirm(`Bạn có chắc muốn xóa vĩnh viễn ${unplayableVideoIds.length} video không thể phát này khỏi hệ thống?`)) {
+    if (!confirm(`Bạn có chắc muốn xóa vĩnh viễn tất cả ${unplayableVideoIds.length} video không thể phát này khỏi toàn bộ cơ sở dữ liệu?`)) {
       return;
     }
 
@@ -1388,11 +1388,11 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ ids: unplayableVideoIds }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi khi xóa video lỗi");
+      if (!res.ok) throw new Error(data.error || "Lỗi xóa video lỗi");
 
       setBulkActionMsg({
         type: "success",
-        text: `Đã xóa thành công ${unplayableVideoIds.length} video không thể phát!`,
+        text: `Đã xóa thành công ${data.count || unplayableVideoIds.length} video bị lỗi phát khỏi toàn bộ cơ sở dữ liệu!`,
       });
       setUnplayableVideoIds([]);
       loadMediaList(mediaPage, searchTag, listFormatFilter === "ERROR_VIDEO" ? "ALL" : listFormatFilter, mediaLimit);
@@ -3240,14 +3240,14 @@ export default function AdminDashboardPage() {
                   onClick={handleScanUnplayableVideos}
                   disabled={isScanningUnplayable}
                   className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-200 font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-                  title="Quét kiểm tra trạng thái 300 link video mới nhất trên máy chủ bằng 25 luồng song song"
+                  title="Quét kiểm tra trạng thái TOÀN BỘ video trong cơ sở dữ liệu bằng 40 luồng song song"
                 >
                   {isScanningUnplayable ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
                   ) : (
                     <Search className="w-3.5 h-3.5 text-amber-400" />
                   )}
-                  <span>{isScanningUnplayable ? "Đang quét video..." : "Quét video lỗi"}</span>
+                  <span>{isScanningUnplayable ? "Đang quét toàn bộ video..." : "Quét tất cả video lỗi"}</span>
                 </button>
 
                 <button

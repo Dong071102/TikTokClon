@@ -7,6 +7,9 @@ import sharp from "sharp";
 // Cache kích thước ảnh trong bộ nhớ để không bao giờ probe lại 1 URL 2 lần
 const imageDimensionCache = new Map<string, { width: number; height: number; error?: boolean }>();
 
+// Cache kết quả kiểm tra trạng thái video trong bộ nhớ
+const videoPlayableCache = new Map<string, { unplayable: boolean; reason?: string }>();
+
 // Hàm chạy song song với giới hạn concurrency (pool worker)
 async function pMap<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -138,12 +141,20 @@ async function checkVideoPlayable(v: {
   storageMode: string;
   localPath: string | null;
 }): Promise<{ unplayable: boolean; reason?: string }> {
+  // Kiểm tra cache trước
+  const cached = videoPlayableCache.get(v.mediaUrl);
+  if (cached !== undefined) return cached;
+
   // 1. File cục bộ trên máy chủ
   if (v.storageMode === "LOCAL_STORAGE" && v.localPath) {
     if (!fs.existsSync(v.localPath)) {
-      return { unplayable: true, reason: "File cục bộ trên máy chủ không tồn tại" };
+      const res = { unplayable: true, reason: "File cục bộ trên máy chủ không tồn tại" };
+      videoPlayableCache.set(v.mediaUrl, res);
+      return res;
     }
-    return { unplayable: false };
+    const res = { unplayable: false };
+    videoPlayableCache.set(v.mediaUrl, res);
+    return res;
   }
 
   // 2. Direct HTTP link
@@ -176,7 +187,9 @@ async function checkVideoPlayable(v: {
 
       // Status 200 hoặc 206 -> Video chạy tốt
       if (res.ok || res.status === 206) {
-        return { unplayable: false };
+        const result = { unplayable: false };
+        videoPlayableCache.set(v.mediaUrl, result);
+        return result;
       }
 
       // Nếu 403 Forbidden -> Thử thêm referer từ domain
@@ -196,54 +209,72 @@ async function checkVideoPlayable(v: {
           });
           clearTimeout(to2);
           if (res2.ok || res2.status === 206) {
-            return { unplayable: false };
+            const result = { unplayable: false };
+            videoPlayableCache.set(v.mediaUrl, result);
+            return result;
           }
         } catch {}
 
-        return {
+        const result = {
           unplayable: true,
           reason: "Server nguồn từ chối truy cập (HTTP 403 Forbidden)",
         };
+        videoPlayableCache.set(v.mediaUrl, result);
+        return result;
       }
 
       if (res.status === 404 || res.status === 410) {
-        return {
+        const result = {
           unplayable: true,
           reason: `Link video đã chết (HTTP ${res.status})`,
         };
+        videoPlayableCache.set(v.mediaUrl, result);
+        return result;
       }
 
       if (res.status >= 500) {
-        return {
+        const result = {
           unplayable: true,
           reason: `Máy chủ chứa video gặp lỗi (HTTP ${res.status})`,
         };
+        videoPlayableCache.set(v.mediaUrl, result);
+        return result;
       }
 
       if (res.status >= 400) {
-        return {
+        const result = {
           unplayable: true,
           reason: `Lỗi kết nối HTTP ${res.status}`,
         };
+        videoPlayableCache.set(v.mediaUrl, result);
+        return result;
       }
 
-      return { unplayable: false };
+      const result = { unplayable: false };
+      videoPlayableCache.set(v.mediaUrl, result);
+      return result;
     } catch (err: any) {
       clearTimeout(timeout);
       if (err.name === "AbortError") {
-        return {
+        const result = {
           unplayable: true,
           reason: "Máy chủ video không phản hồi (Timeout > 4s)",
         };
+        videoPlayableCache.set(v.mediaUrl, result);
+        return result;
       }
-      return {
+      const result = {
         unplayable: true,
         reason: err.message || "Không thể kết nối đến URL video (Host chết hoặc DNS lỗi)",
       };
+      videoPlayableCache.set(v.mediaUrl, result);
+      return result;
     }
   }
 
-  return { unplayable: false };
+  const result = { unplayable: false };
+  videoPlayableCache.set(v.mediaUrl, result);
+  return result;
 }
 
 // Hàm quét và lọc sạch các ảnh nhỏ / ảnh hỏng bên trong galleryUrls của từng Album (chạy song song 25 luồng)
@@ -560,21 +591,23 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Quét kiểm tra trạng thái HTTP của các link video (Phát hiện video chết / 404 / hết hạn) song song 25 luồng
+    // 3. Quét kiểm tra trạng thái HTTP của các link video (Phát hiện video chết / 404 / hết hạn) song song 40 luồng trên toàn bộ hệ thống
     if (action === "SCAN_UNPLAYABLE_VIDEOS") {
       const startTime = Date.now();
-      const limit = Math.min(1000, Math.max(10, Number(body.limit) || 300));
+      const scanAll = body.scanAll !== false;
+      const limit = Number(body.limit);
+
       const videos = await prisma.mediaItem.findMany({
         where: { type: "VIDEO" },
-        take: limit,
+        ...(scanAll || !limit ? {} : { take: Math.min(10000, limit) }),
         orderBy: { createdAt: "desc" },
         select: { id: true, title: true, mediaUrl: true, storageMode: true, localPath: true },
       });
 
       const unplayable: Array<{ id: string; title: string | null; mediaUrl: string; reason: string }> = [];
 
-      // Chạy kiểm tra video song song 25 luồng đồng thời
-      await pMap(videos, 25, async (v) => {
+      // Chạy kiểm tra video song song 40 luồng đồng thời
+      await pMap(videos, 40, async (v) => {
         const check = await checkVideoPlayable(v);
         if (check.unplayable) {
           unplayable.push({
