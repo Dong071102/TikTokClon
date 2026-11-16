@@ -597,14 +597,15 @@ export default function VideoPlayer({
       </div>
 
       {/* THANH TIẾN TRÌNH VIDEO (PROGRESS BAR & SCRUBBER)
-          - Nâng cao hơn đáy màn hình khoảng 0.5cm (~20px / bottom-4 sm:bottom-5) để dễ thao tác trên di động, tránh cấn thanh vuốt Home của điện thoại
+          - Có margin 2 bên (left-8 right-8 sm:left-14 sm:right-14) để tránh sát mép màn hình, ngăn chặn việc vuốt chạm nhầm gesture back/chuyển app của hệ điều hành
+          - Nâng cao hơn đáy màn hình (bottom-5 sm:bottom-6) để dễ thao tác trên di động, tránh cấn thanh vuốt Home của điện thoại
           - Khi xoay ngang: chuyển lên trên đầu màn hình (top-1 sm:top-2), mờ bán trong suốt
       */}
       <div
-        className={`absolute left-0 right-0 z-30 group/progress px-3 sm:px-6 flex flex-col pointer-events-auto cursor-pointer transition-all duration-300 ${
+        className={`absolute left-8 right-8 sm:left-14 sm:right-14 z-30 group/progress px-1 sm:px-2 flex flex-col pointer-events-auto cursor-pointer transition-all duration-300 ${
           isRotated90
             ? "top-1 sm:top-2 pt-2 pb-3 justify-start opacity-50 hover:opacity-100"
-            : "bottom-4 sm:bottom-5 py-2.5 justify-end opacity-75 hover:opacity-100"
+            : "bottom-5 sm:bottom-6 py-2.5 justify-end opacity-75 hover:opacity-100"
         } ${isScrubbing ? "!opacity-100" : ""}`}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={handlePointerDown}
