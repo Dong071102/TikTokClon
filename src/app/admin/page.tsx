@@ -2537,14 +2537,14 @@ export default function AdminDashboardPage() {
                         <div
                           key={`${item.url}-${idx}`}
                           onClick={() => toggleSelectMedia(item.url)}
-                          className={`group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer border-2 transition-all bg-neutral-950 flex items-center justify-center ${
+                          className={`group relative w-full aspect-[3/4] min-w-0 rounded-xl overflow-hidden cursor-pointer border-2 transition-all bg-neutral-950 flex items-center justify-center isolate ${
                             isSelected
                               ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/20 scale-[0.98]"
                               : "border-neutral-800 hover:border-neutral-600 opacity-60 hover:opacity-100"
                           }`}
                         >
                           {item.type === "VIDEO" ? (
-                            <div className="relative w-full h-full flex items-center justify-center bg-black">
+                            <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
                               {item.thumbnailUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
@@ -2608,7 +2608,7 @@ export default function AdminDashboardPage() {
                               </div>
                             </div>
                           ) : (
-                            <div className="relative w-full h-full flex items-center justify-center bg-black">
+                            <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={item.url}

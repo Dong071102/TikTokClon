@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import useEmblaCarousel from "embla-carousel-react";
-import { ChevronLeft, ChevronRight, Heart, Layers, LayoutGrid, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Heart, Layers, LayoutGrid, X, ImageIcon, ImageOff } from "lucide-react";
 
 interface GalleryViewerProps {
   images: string[];
@@ -10,6 +10,158 @@ interface GalleryViewerProps {
   isActive: boolean;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+}
+
+interface GalleryGridItemProps {
+  src: string;
+  idx: number;
+  isCurrent: boolean;
+  onSelect: () => void;
+  rootRef: React.RefObject<HTMLDivElement | null>;
+}
+
+function GalleryGridItem({
+  src,
+  idx,
+  isCurrent,
+  onSelect,
+  rootRef,
+}: GalleryGridItemProps) {
+  const itemRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [imgSrc, setImgSrc] = useState(src);
+  const [isProxyTried, setIsProxyTried] = useState(false);
+
+  // Cập nhật lại khi link ảnh thay đổi
+  useEffect(() => {
+    setImgSrc(src);
+    setIsLoaded(false);
+    setHasError(false);
+    setIsProxyTried(false);
+  }, [src]);
+
+  // Tự động cuộn đến ảnh đang xem khi mở modal
+  useEffect(() => {
+    if (isCurrent && itemRef.current) {
+      itemRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
+  }, [isCurrent]);
+
+  // Lazy loading dựa trên IntersectionObserver trong vùng cuộn modal
+  useEffect(() => {
+    // 8 ảnh đầu tiên tải ngay lập tức để modal hiển thị tức thì không bị trống
+    if (idx < 8) {
+      setIsVisible(true);
+      return;
+    }
+
+    const target = itemRef.current;
+    if (!target) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          setIsVisible(true);
+          observer.unobserve(target);
+        }
+      },
+      {
+        root: rootRef.current,
+        rootMargin: "300px", // Tải trước khi cuộn tới 300px
+        threshold: 0,
+      }
+    );
+
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [idx, rootRef]);
+
+  return (
+    <div
+      ref={itemRef}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      className={`group relative w-full aspect-[3/4] min-w-0 rounded-xl overflow-hidden cursor-pointer border-2 transition-all bg-neutral-950 isolate select-none ${
+        isCurrent
+          ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/30 scale-[0.98] z-10"
+          : "border-neutral-800 hover:border-neutral-600 opacity-80 hover:opacity-100 hover:scale-[1.02]"
+      }`}
+    >
+      {/* Placeholder / Skeleton khi ảnh chưa hiển thị hoặc đang tải */}
+      {(!isVisible || !isLoaded) && !hasError && (
+        <div className="absolute inset-0 bg-neutral-800/80 animate-pulse flex flex-col items-center justify-center gap-1 text-neutral-500 z-0">
+          <ImageIcon className="w-5 h-5 opacity-40 animate-pulse" />
+        </div>
+      )}
+
+      {/* Ảnh thumbnail với absolute inset-0 để loại bỏ hoàn toàn lỗi tràn/chồng chéo */}
+      {isVisible && !hasError && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imgSrc}
+          alt={`Thumbnail ${idx + 1}`}
+          referrerPolicy="no-referrer"
+          decoding="async"
+          loading="lazy"
+          className={`absolute inset-0 w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
+            isLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          onLoad={() => setIsLoaded(true)}
+          onError={() => {
+            if (!isProxyTried && !imgSrc.includes("/api/proxy")) {
+              setIsProxyTried(true);
+              setImgSrc(`/api/proxy?url=${encodeURIComponent(src)}`);
+            } else {
+              setHasError(true);
+              setIsLoaded(true);
+            }
+          }}
+        />
+      )}
+
+      {/* Fallback khi link ảnh bị lỗi */}
+      {hasError && (
+        <div className="absolute inset-0 bg-neutral-900 flex flex-col items-center justify-center p-2 text-center text-neutral-500 z-0">
+          <ImageOff className="w-5 h-5 mb-1 text-neutral-600" />
+          <span className="text-[9px] text-neutral-400">Lỗi ảnh</span>
+        </div>
+      )}
+
+      {/* Huy hiệu số thứ tự */}
+      <div
+        className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-sm z-10 ${
+          isCurrent
+            ? "bg-blue-600 text-white shadow"
+            : "bg-black/60 text-white/80"
+        }`}
+      >
+        #{idx + 1}
+      </div>
+
+      {/* Nhãn đang xem */}
+      {isCurrent && (
+        <div className="absolute bottom-1.5 inset-x-1.5 py-0.5 rounded bg-blue-600/90 text-white text-[10px] font-bold text-center backdrop-blur-sm shadow z-10">
+          Đang xem
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function GalleryViewer({
@@ -28,6 +180,7 @@ export default function GalleryViewer({
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isGridOpen, setIsGridOpen] = useState(false);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
 
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
@@ -163,6 +316,7 @@ export default function GalleryViewer({
           </button>
         </div>
       )}
+
       {/* MODAL / DRAWER HIỂN THỊ LƯỚI TẤT CẢ ẢNH TRONG GALLERY */}
       {isGridOpen && (
         <div
@@ -173,7 +327,7 @@ export default function GalleryViewer({
           }}
         >
           <div
-            className="w-full max-w-xl bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl max-h-[85vh] flex flex-col space-y-4"
+            className="w-full max-w-xl bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl max-h-[85vh] flex flex-col space-y-3"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header Modal */}
@@ -200,55 +354,27 @@ export default function GalleryViewer({
               </button>
             </div>
 
-            {/* Grid danh sách ảnh */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 overflow-y-auto max-h-[60vh] p-1 no-scrollbar">
-              {images.map((src, idx) => {
-                const isCurrent = idx === currentIndex;
-
-                return (
-                  <div
+            {/* Vùng cuộn danh sách ảnh (Scroll Wrapper độc lập ngăn tràn/chồng chéo) */}
+            <div
+              ref={gridContainerRef}
+              className="flex-1 overflow-y-auto max-h-[62vh] p-1 overscroll-contain no-scrollbar rounded-xl"
+            >
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 sm:gap-3">
+                {images.map((src, idx) => (
+                  <GalleryGridItem
                     key={`${src}-${idx}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    src={src}
+                    idx={idx}
+                    isCurrent={idx === currentIndex}
+                    onSelect={() => {
                       emblaApi?.scrollTo(idx);
                       setCurrentIndex(idx);
                       setIsGridOpen(false);
                     }}
-                    className={`group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                      isCurrent
-                        ? "border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/30 scale-[0.98]"
-                        : "border-neutral-800 hover:border-neutral-600 opacity-75 hover:opacity-100"
-                    }`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={src}
-                      alt={`Thumbnail ${idx + 1}`}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover select-none pointer-events-none"
-                      loading="lazy"
-                    />
-
-                    {/* Huy hiệu số thứ tự */}
-                    <div
-                      className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-sm ${
-                        isCurrent
-                          ? "bg-blue-600 text-white shadow"
-                          : "bg-black/60 text-white/80"
-                      }`}
-                    >
-                      #{idx + 1}
-                    </div>
-
-                    {/* Nhãn đang xem */}
-                    {isCurrent && (
-                      <div className="absolute bottom-1.5 inset-x-1.5 py-0.5 rounded bg-blue-600/90 text-white text-[10px] font-bold text-center backdrop-blur-sm shadow">
-                        Đang xem
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                    rootRef={gridContainerRef}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
