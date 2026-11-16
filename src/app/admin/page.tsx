@@ -124,7 +124,7 @@ export default function AdminDashboardPage() {
     }>
   >([]);
   const [selectedMediaUrls, setSelectedMediaUrls] = useState<string[]>([]);
-  const [mediaTypeFilter, setMediaTypeFilter] = useState<"ALL" | "IMAGE" | "VIDEO">("ALL");
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<"ALL" | "IMAGE" | "VIDEO" | "ERROR_VIDEO" | "SMALL_IMAGE">("ALL");
   const [webStorageMode, setWebStorageMode] = useState<"DIRECT_LINK" | "LOCAL_STORAGE">("DIRECT_LINK");
   const [webGalleryTitle, setWebGalleryTitle] = useState("");
   const [webGalleryTags, setWebGalleryTags] = useState("");
@@ -154,13 +154,17 @@ export default function AdminDashboardPage() {
   const [mediaTotalPages, setMediaTotalPages] = useState(1);
   const [loadingList, setLoadingList] = useState(false);
   const [searchTag, setSearchTag] = useState("");
-  const [listFormatFilter, setListFormatFilter] = useState<"ALL" | "IMAGE" | "GALLERY" | "VIDEO">("ALL");
-  const [formatCounts, setFormatCounts] = useState<{ all: number; video: number; gallery: number; image: number }>({
+  const [listFormatFilter, setListFormatFilter] = useState<"ALL" | "IMAGE" | "GALLERY" | "VIDEO" | "SMALL_IMAGE" | "ERROR_VIDEO">("ALL");
+  const [formatCounts, setFormatCounts] = useState<{ all: number; video: number; gallery: number; image: number; smallImage?: number }>({
     all: 0,
     video: 0,
     gallery: 0,
     image: 0,
+    smallImage: 0,
   });
+  const [unplayableVideoIds, setUnplayableVideoIds] = useState<string[]>([]);
+  const [isCleaningSmallImages, setIsCleaningSmallImages] = useState(false);
+  const [isCleaningUnplayable, setIsCleaningUnplayable] = useState(false);
 
   // Chọn & Thao tác hàng loạt (Bulk actions)
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -451,6 +455,62 @@ export default function AdminDashboardPage() {
         return meta.width >= 400;
       })
     );
+  };
+
+  // Xóa bỏ hoàn toàn ảnh nhỏ (<400px) khỏi danh sách cào xem trước
+  const handleRemoveSmallImagesFromScrape = () => {
+    const toRemove = new Set(
+      scrapedMediaItems
+        .filter((m) => {
+          const w = mediaMetaMap[m.url]?.width;
+          return m.type === "IMAGE" && Boolean(w && w < 400);
+        })
+        .map((m) => m.url)
+    );
+    if (toRemove.size === 0) {
+      alert("Không có hình ảnh nào có kích thước nhỏ hơn 400px trong danh sách cào.");
+      return;
+    }
+    if (!confirm(`Bạn có chắc muốn loại bỏ ${toRemove.size} ảnh nhỏ (<400px) khỏi danh sách xem trước?`)) return;
+    setScrapedMediaItems((prev) => prev.filter((m) => !toRemove.has(m.url)));
+    setSelectedMediaUrls((prev) => prev.filter((u) => !toRemove.has(u)));
+  };
+
+  // Xóa bỏ hoàn toàn video lỗi khỏi danh sách cào xem trước
+  const handleRemoveErrorVideosFromScrape = () => {
+    const toRemove = new Set(
+      scrapedMediaItems
+        .filter((m) => m.type === "VIDEO" && mediaMetaMap[m.url]?.error === true)
+        .map((m) => m.url)
+    );
+    if (toRemove.size === 0) {
+      alert("Không phát hiện video nào bị lỗi phát trong danh sách cào.");
+      return;
+    }
+    if (!confirm(`Bạn có chắc muốn loại bỏ ${toRemove.size} video bị lỗi phát khỏi danh sách xem trước?`)) return;
+    setScrapedMediaItems((prev) => prev.filter((m) => !toRemove.has(m.url)));
+    setSelectedMediaUrls((prev) => prev.filter((u) => !toRemove.has(u)));
+  };
+
+  // Dọn sạch cả video lỗi và ảnh nhỏ trong 1 chạm
+  const handleCleanupAllScrapedJunk = () => {
+    const toRemove = new Set(
+      scrapedMediaItems
+        .filter((m) => {
+          if (m.type === "VIDEO" && mediaMetaMap[m.url]?.error === true) return true;
+          const w = mediaMetaMap[m.url]?.width;
+          if (m.type === "IMAGE" && Boolean(w && w < 400)) return true;
+          return false;
+        })
+        .map((m) => m.url)
+    );
+    if (toRemove.size === 0) {
+      alert("Danh sách cào đang sạch sẽ, không có video lỗi hoặc ảnh nhỏ (<400px).");
+      return;
+    }
+    if (!confirm(`Dọn sạch rác: Loại bỏ ${toRemove.size} mục (gồm video lỗi và ảnh nhỏ) khỏi danh sách xem trước?`)) return;
+    setScrapedMediaItems((prev) => prev.filter((m) => !toRemove.has(m.url)));
+    setSelectedMediaUrls((prev) => prev.filter((u) => !toRemove.has(u)));
   };
 
   const handleSelectAllMedia = () => {
@@ -909,6 +969,77 @@ export default function AdminDashboardPage() {
       setBulkActionMsg({ type: "error", text: err.message || "Xóa hàng loạt thất bại" });
     } finally {
       setIsBulkDeleting(false);
+    }
+  };
+
+  // Xóa tất cả ảnh nhỏ trong Database
+  const handleDeleteAllSmallImages = async () => {
+    if ((formatCounts.smallImage || 0) === 0) {
+      alert("Không có hình ảnh nào có kích thước nhỏ (< 400px) trong hệ thống.");
+      return;
+    }
+    if (!confirm(`CẢNH BÁO: Bạn có chắc chắn muốn xóa vĩnh viễn tất cả ${formatCounts.smallImage} ảnh có kích thước nhỏ (< 400px) khỏi cơ sở dữ liệu?`)) {
+      return;
+    }
+
+    setIsCleaningSmallImages(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "DELETE_SMALL_IMAGES", threshold: 400 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi khi xóa ảnh nhỏ");
+
+      setBulkActionMsg({
+        type: "success",
+        text: data.message || `Đã xóa thành công ${data.count} ảnh nhỏ khỏi hệ thống!`,
+      });
+      loadMediaList(1, searchTag, listFormatFilter === "SMALL_IMAGE" ? "ALL" : listFormatFilter, mediaLimit);
+      if (listFormatFilter === "SMALL_IMAGE") setListFormatFilter("ALL");
+      loadExistingTags();
+    } catch (err: any) {
+      setBulkActionMsg({ type: "error", text: err.message || "Lỗi xóa ảnh nhỏ" });
+    } finally {
+      setIsCleaningSmallImages(false);
+    }
+  };
+
+  // Xóa tất cả video không thể phát phát hiện được trên trang
+  const handleDeleteAllUnplayableVideos = async () => {
+    if (unplayableVideoIds.length === 0) {
+      alert("Không có video lỗi nào được phát hiện trên trang này.");
+      return;
+    }
+    if (!confirm(`Bạn có chắc muốn xóa vĩnh viễn ${unplayableVideoIds.length} video không thể phát này khỏi hệ thống?`)) {
+      return;
+    }
+
+    setIsCleaningUnplayable(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: unplayableVideoIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi khi xóa video lỗi");
+
+      setBulkActionMsg({
+        type: "success",
+        text: `Đã xóa thành công ${unplayableVideoIds.length} video không thể phát!`,
+      });
+      setUnplayableVideoIds([]);
+      loadMediaList(mediaPage, searchTag, listFormatFilter === "ERROR_VIDEO" ? "ALL" : listFormatFilter, mediaLimit);
+      if (listFormatFilter === "ERROR_VIDEO") setListFormatFilter("ALL");
+      loadExistingTags();
+    } catch (err: any) {
+      setBulkActionMsg({ type: "error", text: err.message || "Lỗi xóa video lỗi" });
+    } finally {
+      setIsCleaningUnplayable(false);
     }
   };
 
@@ -1551,10 +1682,24 @@ export default function AdminDashboardPage() {
           const selectedVideosCount = scrapedMediaItems.filter(
             (m) => m.type === "VIDEO" && selectedMediaUrls.includes(m.url)
           ).length;
+          const errorVideosCount = scrapedMediaItems.filter(
+            (m) => m.type === "VIDEO" && mediaMetaMap[m.url]?.error === true
+          ).length;
+          const smallImagesCount = scrapedMediaItems.filter((m) => {
+            const w = mediaMetaMap[m.url]?.width;
+            return m.type === "IMAGE" && Boolean(w && w < 400);
+          }).length;
 
           const displayedItems = scrapedMediaItems.filter((item) => {
             if (mediaTypeFilter === "ALL") return true;
-            return item.type === mediaTypeFilter;
+            if (mediaTypeFilter === "IMAGE") return item.type === "IMAGE";
+            if (mediaTypeFilter === "VIDEO") return item.type === "VIDEO";
+            if (mediaTypeFilter === "ERROR_VIDEO") return item.type === "VIDEO" && mediaMetaMap[item.url]?.error === true;
+            if (mediaTypeFilter === "SMALL_IMAGE") {
+              const w = mediaMetaMap[item.url]?.width;
+              return item.type === "IMAGE" && Boolean(w && w < 400);
+            }
+            return true;
           });
 
           return (
@@ -1882,7 +2027,7 @@ export default function AdminDashboardPage() {
                     </div>
 
                     {/* Bộ lọc loại Media */}
-                    <div className="flex items-center gap-1.5 bg-neutral-800 p-1 rounded-xl border border-neutral-700 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 bg-neutral-800 p-1 rounded-xl border border-neutral-700 shrink-0">
                       <button
                         type="button"
                         onClick={() => setMediaTypeFilter("ALL")}
@@ -1918,61 +2063,132 @@ export default function AdminDashboardPage() {
                         <Film className="w-3.5 h-3.5" />
                         <span>Video ({totalVideos})</span>
                       </button>
+                      {smallImagesCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setMediaTypeFilter("SMALL_IMAGE")}
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                            mediaTypeFilter === "SMALL_IMAGE"
+                              ? "bg-amber-600 text-white shadow"
+                              : "text-amber-400 hover:text-amber-300"
+                          }`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Ảnh nhỏ ({smallImagesCount})</span>
+                        </button>
+                      )}
+                      {errorVideosCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setMediaTypeFilter("ERROR_VIDEO")}
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                            mediaTypeFilter === "ERROR_VIDEO"
+                              ? "bg-red-600 text-white shadow"
+                              : "text-red-400 hover:text-red-300"
+                          }`}
+                        >
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>Video lỗi ({errorVideosCount})</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Nút thao tác chọn nhanh & Lọc thông minh */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSelectAllMedia}
-                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition active:scale-95"
-                    >
-                      Chọn tất cả
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDeselectAllMedia}
-                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-400 hover:text-white font-medium transition active:scale-95"
-                    >
-                      Bỏ chọn tất cả
-                    </button>
-                    {totalImages > 0 && (
+                  {/* Nút thao tác chọn nhanh & Xóa rác khỏi danh sách cào */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={handleSelectOnlyImages}
-                        className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-blue-300 hover:text-blue-200 font-medium transition active:scale-95"
+                        onClick={handleSelectAllMedia}
+                        className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-white font-medium transition active:scale-95"
                       >
-                        Chỉ chọn Ảnh ({totalImages})
+                        Chọn tất cả
                       </button>
-                    )}
-                    {totalVideos > 0 && (
                       <button
                         type="button"
-                        onClick={handleSelectOnlyVideos}
-                        className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-purple-300 hover:text-purple-200 font-medium transition active:scale-95"
+                        onClick={handleDeselectAllMedia}
+                        className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-400 hover:text-white font-medium transition active:scale-95"
                       >
-                        Chỉ chọn Video ({totalVideos})
+                        Bỏ chọn tất cả
                       </button>
+                      {totalImages > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSelectOnlyImages}
+                          className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-blue-300 hover:text-blue-200 font-medium transition active:scale-95"
+                        >
+                          Chỉ chọn Ảnh ({totalImages})
+                        </button>
+                      )}
+                      {totalVideos > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSelectOnlyVideos}
+                          className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-purple-300 hover:text-purple-200 font-medium transition active:scale-95"
+                        >
+                          Chỉ chọn Video ({totalVideos})
+                        </button>
+                      )}
+                      {errorVideosCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleDeselectErrorVideos}
+                          title="Bỏ chọn các video bị lỗi không thể phát"
+                          className="px-3 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-500/40 text-xs text-red-300 font-medium transition active:scale-95 flex items-center gap-1.5"
+                        >
+                          <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                          <span>Bỏ chọn video lỗi</span>
+                        </button>
+                      )}
+                      {smallImagesCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleDeselectSmallImages}
+                          title="Bỏ chọn các ảnh có kích thước nhỏ hơn 400px (ảnh thumbnail / icon)"
+                          className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-amber-300 hover:text-amber-200 font-medium transition active:scale-95 flex items-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Bỏ chọn ảnh nhỏ (&lt;400px)</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Nhóm nút xóa dọn dẹp khỏi danh sách cào */}
+                    {(smallImagesCount > 0 || errorVideosCount > 0) && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {errorVideosCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveErrorVideosFromScrape}
+                            title="Xóa vĩnh viễn các video lỗi khỏi danh sách cào này"
+                            className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-xs text-red-300 font-semibold transition active:scale-95 flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                            <span>Xóa video lỗi ({errorVideosCount})</span>
+                          </button>
+                        )}
+                        {smallImagesCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveSmallImagesFromScrape}
+                            title="Xóa vĩnh viễn các ảnh nhỏ (<400px) khỏi danh sách cào này"
+                            className="px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/40 text-xs text-amber-300 font-semibold transition active:scale-95 flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Xóa ảnh nhỏ ({smallImagesCount})</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleCleanupAllScrapedJunk}
+                          title="Dọn sạch rác: Xóa bỏ cả video lỗi và ảnh nhỏ cùng lúc"
+                          className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs text-white font-bold transition active:scale-95 flex items-center gap-1.5 shadow-md shadow-red-600/20"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Dọn sạch rác ({errorVideosCount + smallImagesCount})</span>
+                        </button>
+                      </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={handleDeselectErrorVideos}
-                      title="Bỏ chọn các video bị lỗi không thể phát"
-                      className="px-3 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-500/40 text-xs text-red-300 font-medium transition active:scale-95 flex items-center gap-1.5"
-                    >
-                      <AlertCircle className="w-3.5 h-3.5 text-red-400" />
-                      <span>Bỏ chọn video lỗi</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDeselectSmallImages}
-                      title="Bỏ chọn các ảnh có kích thước nhỏ hơn 400px (ảnh thumbnail / icon)"
-                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-amber-300 hover:text-amber-200 font-medium transition active:scale-95 flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Bỏ chọn ảnh nhỏ (&lt;400px)</span>
-                    </button>
                   </div>
 
                   {/* Grid hiển thị các media items */}
@@ -2482,6 +2698,38 @@ export default function AdminDashboardPage() {
                     <ImageIcon className="w-3.5 h-3.5" />
                     <span>Ảnh đơn ({formatCounts.image})</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListFormatFilter("SMALL_IMAGE");
+                      setMediaPage(1);
+                      loadMediaList(1, searchTag, "SMALL_IMAGE", mediaLimit);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                      listFormatFilter === "SMALL_IMAGE"
+                        ? "bg-amber-600 text-white shadow"
+                        : "text-amber-400/80 hover:text-amber-300"
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Ảnh nhỏ &lt;400px ({formatCounts.smallImage || 0})</span>
+                  </button>
+                  {unplayableVideoIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setListFormatFilter("ERROR_VIDEO");
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                        listFormatFilter === "ERROR_VIDEO"
+                          ? "bg-red-600 text-white shadow"
+                          : "text-red-400 hover:text-red-300"
+                      }`}
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                      <span>Video lỗi phát ({unplayableVideoIds.length})</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Chọn số lượng hiển thị mỗi trang */}
@@ -2550,6 +2798,51 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
+            {/* Thanh cảnh báo & Dọn dẹp nhanh video lỗi / ảnh nhỏ */}
+            {(unplayableVideoIds.length > 0 || (formatCounts.smallImage || 0) > 0) && (
+              <div className="p-3 bg-neutral-900/90 border border-amber-500/30 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs animate-fade-in shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="text-neutral-300">
+                    Phát hiện mục cần dọn dẹp:
+                    {unplayableVideoIds.length > 0 && (
+                      <strong className="text-red-400 ml-1.5">{unplayableVideoIds.length} video lỗi phát</strong>
+                    )}
+                    {unplayableVideoIds.length > 0 && (formatCounts.smallImage || 0) > 0 && <span> và </span>}
+                    {(formatCounts.smallImage || 0) > 0 && (
+                      <strong className="text-amber-400 ml-1">{formatCounts.smallImage} ảnh nhỏ (&lt;400px)</strong>
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {unplayableVideoIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAllUnplayableVideos}
+                      disabled={isCleaningUnplayable}
+                      className="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-500 disabled:opacity-50 text-white font-medium transition active:scale-95 flex items-center gap-1.5 shadow-sm"
+                    >
+                      {isCleaningUnplayable ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      <span>Xóa {unplayableVideoIds.length} video lỗi này</span>
+                    </button>
+                  )}
+
+                  {(formatCounts.smallImage || 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAllSmallImages}
+                      disabled={isCleaningSmallImages}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600/90 hover:bg-amber-500 disabled:opacity-50 text-white font-medium transition active:scale-95 flex items-center gap-1.5 shadow-sm"
+                    >
+                      {isCleaningSmallImages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      <span>Xóa tất cả {formatCounts.smallImage} ảnh nhỏ</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Thanh công cụ Chọn & Thao tác hàng loạt */}
             <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -2571,6 +2864,19 @@ export default function AdminDashboardPage() {
                     </>
                   )}
                 </button>
+
+                {unplayableVideoIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMediaIds((prev) => Array.from(new Set([...prev, ...unplayableVideoIds])));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/60 border border-red-500/40 text-xs text-red-300 font-medium transition active:scale-95 flex items-center gap-1.5"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                    <span>Chọn tất cả {unplayableVideoIds.length} video lỗi</span>
+                  </button>
+                )}
 
                 {selectedMediaIds.length > 0 && (
                   <button
@@ -2645,15 +2951,28 @@ export default function AdminDashboardPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {mediaList.map((item) => {
+                {mediaList
+                  .filter((item) => {
+                    if (listFormatFilter === "ERROR_VIDEO") {
+                      return unplayableVideoIds.includes(item.id);
+                    }
+                    return true;
+                  })
+                  .map((item) => {
                   const isSelected = selectedMediaIds.includes(item.id);
                   const isGallery = item.galleryUrls && item.galleryUrls.length > 1;
+                  const isUnplayable = unplayableVideoIds.includes(item.id);
+                  const isSmallImage =
+                    item.type === "IMAGE" &&
+                    ((item.width && item.width < 400) || (item.height && item.height < 400));
 
                   return (
                     <div
                       key={item.id}
                       className={`bg-neutral-900 border rounded-xl overflow-hidden flex flex-col group transition-all duration-200 ${
-                        isSelected
+                        isUnplayable
+                          ? "border-red-500 ring-2 ring-red-500/30"
+                          : isSelected
                           ? "border-blue-500 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/10"
                           : "border-neutral-800 hover:border-neutral-700"
                       }`}
@@ -2690,6 +3009,8 @@ export default function AdminDashboardPage() {
                               if (!target.src.includes("/api/proxy")) {
                                 target.src = `/api/proxy?url=${encodeURIComponent(item.mediaUrl)}`;
                                 target.load();
+                              } else {
+                                setUnplayableVideoIds((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
                               }
                             }}
                           />
@@ -2701,6 +3022,15 @@ export default function AdminDashboardPage() {
                             referrerPolicy="no-referrer"
                             className="max-w-full max-h-full w-auto h-auto object-contain select-none"
                           />
+                        )}
+
+                        {/* Cảnh báo video không thể phát */}
+                        {isUnplayable && (
+                          <div className="absolute inset-0 bg-red-950/80 backdrop-blur-xs flex flex-col items-center justify-center p-2 text-center pointer-events-none z-10 border-2 border-red-500/70">
+                            <AlertCircle className="w-7 h-7 text-red-400 mb-1 animate-pulse" />
+                            <span className="text-xs font-bold text-red-200">Không thể phát</span>
+                            <span className="text-[10px] text-red-300 opacity-80 mt-0.5">Link lỗi hoặc codec không hỗ trợ</span>
+                          </div>
                         )}
 
                         {/* Badges định dạng (Type, Album, Source) */}
@@ -2719,6 +3049,13 @@ export default function AdminDashboardPage() {
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow">
                               <ImageIcon className="w-3 h-3" />
                               <span>Ảnh đơn</span>
+                            </span>
+                          )}
+
+                          {isSmallImage && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow">
+                              <Sparkles className="w-3 h-3" />
+                              <span>Ảnh nhỏ</span>
                             </span>
                           )}
 

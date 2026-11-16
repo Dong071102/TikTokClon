@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const rawLimit = searchParams.get("limit");
   const limit = rawLimit === "all" ? 1000 : Math.max(1, parseInt(rawLimit || "24", 10));
   const tag = searchParams.get("tag");
-  const format = searchParams.get("format") || searchParams.get("type"); // "ALL" | "IMAGE" | "GALLERY" | "VIDEO"
+  const format = searchParams.get("format") || searchParams.get("type"); // "ALL" | "IMAGE" | "GALLERY" | "VIDEO" | "SMALL_IMAGE"
 
   const skip = (page - 1) * limit;
 
@@ -39,10 +39,16 @@ export async function GET(request: Request) {
   } else if (format === "IMAGE") {
     where.type = "IMAGE";
     where.galleryUrls = { isEmpty: true };
+  } else if (format === "SMALL_IMAGE") {
+    where.type = "IMAGE";
+    where.OR = [
+      { width: { lt: 400, not: null } },
+      { height: { lt: 400, not: null } },
+    ];
   }
 
   try {
-    const [total, items, allCount, videoCount, galleryCount, imageCount] = await Promise.all([
+    const [total, items, allCount, videoCount, galleryCount, imageCount, smallImageCount] = await Promise.all([
       prisma.mediaItem.count({ where }),
       prisma.mediaItem.findMany({
         where,
@@ -59,6 +65,16 @@ export async function GET(request: Request) {
       prisma.mediaItem.count({ where: { ...baseWhere, type: "VIDEO" } }),
       prisma.mediaItem.count({ where: { ...baseWhere, type: "IMAGE", galleryUrls: { isEmpty: false } } }),
       prisma.mediaItem.count({ where: { ...baseWhere, type: "IMAGE", galleryUrls: { isEmpty: true } } }),
+      prisma.mediaItem.count({
+        where: {
+          ...baseWhere,
+          type: "IMAGE",
+          OR: [
+            { width: { lt: 400, not: null } },
+            { height: { lt: 400, not: null } },
+          ],
+        },
+      }),
     ]);
 
     return NextResponse.json({
@@ -72,6 +88,7 @@ export async function GET(request: Request) {
         video: videoCount,
         gallery: galleryCount,
         image: imageCount,
+        smallImage: smallImageCount,
       },
       pagination: {
         total,
