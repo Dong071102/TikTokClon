@@ -486,84 +486,22 @@ export default function TikTokFeed() {
 
   return (
     <div className="relative w-full h-[100dvh] bg-black text-white overflow-hidden select-none">
-      {/* Top Bar Tối Giản: Thanh chuyển nhanh định dạng + Huy hiệu bộ lọc đang bật + 1 Nút Menu duy nhất */}
+      {/* Top Bar Tối Giản: Chỉ hiển thị huy hiệu bộ lọc đang bật (nếu có) + 1 Nút Menu duy nhất */}
       <header className="absolute top-0 left-0 right-0 p-3 sm:p-4 z-40 flex items-center justify-between pointer-events-none gap-2">
-        {/* Vùng hiển thị tag / bộ lọc đang kích hoạt & Quick format selector */}
+        {/* Vùng hiển thị tag / bộ lọc đang kích hoạt */}
         <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto flex-wrap">
-          {/* Quick Format Filter Tabs: Chuyển nhanh hoặc gộp bộ lọc trực tiếp */}
-          <div className="flex items-center gap-0.5 sm:gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/20 pointer-events-auto text-xs shadow-lg">
-            <button
-              type="button"
-              onClick={handleSelectAllFormats}
-              title="Xem tất cả định dạng"
-              className={`px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
-                selectedFormats.length === 3
-                  ? "bg-white text-black shadow font-bold"
-                  : "text-neutral-300 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              Tất cả
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleFormat("VIDEO")}
-              title="Lọc riêng hoặc gộp Video"
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
-                selectedFormats.length < 3 && selectedFormats.includes("VIDEO")
-                  ? "bg-emerald-600 text-white shadow font-bold"
-                  : "text-neutral-300 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              <Film className="w-3 h-3" />
-              <span>Video</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleFormat("GALLERY")}
-              title="Lọc riêng hoặc gộp Album"
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
-                selectedFormats.length < 3 && selectedFormats.includes("GALLERY")
-                  ? "bg-blue-600 text-white shadow font-bold"
-                  : "text-neutral-300 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              <span>Album</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleFormat("IMAGE")}
-              title="Lọc riêng hoặc gộp Ảnh đơn"
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold transition ${
-                selectedFormats.length < 3 && selectedFormats.includes("IMAGE")
-                  ? "bg-amber-600 text-white shadow font-bold"
-                  : "text-neutral-300 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              <ImageIcon className="w-3 h-3" />
-              <span>Ảnh</span>
-            </button>
-          </div>
-
-          {/* Nút bật/tắt nhanh chế độ Trộn ảnh từ Album thành cuộn dọc */}
-          <button
-            type="button"
-            onClick={toggleMixGallery}
-            title={
-              mixGallery
-                ? "Đang BẬT: Album được rã thành từng ảnh đơn cuộn dọc để lướt thoải mái (Bấm để tắt)"
-                : "Đang TẮT: Album giữ nguyên dạng lướt ngang nhiều ảnh (Bấm để bật trộn)"
-            }
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full backdrop-blur-md text-[11px] sm:text-xs font-semibold transition border shadow-lg ${
-              mixGallery
-                ? "bg-amber-500/25 border-amber-500/70 text-amber-300 shadow-amber-500/20 font-bold"
-                : "bg-black/60 border-white/20 text-neutral-400 hover:text-white hover:bg-black/80"
-            }`}
-          >
-            <Shuffle className={`w-3 h-3 ${mixGallery ? "text-amber-400 animate-pulse" : "text-neutral-400"}`} />
-            <span className="hidden sm:inline">{mixGallery ? "Trộn Album: Bật" : "Trộn Album: Tắt"}</span>
-            <span className="sm:hidden">{mixGallery ? "Trộn: Bật" : "Trộn: Tắt"}</span>
-          </button>
+          {!isAllFormats && (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
+              <span>Định dạng: {getFormatLabel()}</span>
+              <button
+                onClick={handleSelectAllFormats}
+                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                title="Bỏ lọc định dạng, xem tất cả"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {activeTag && (
             <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
