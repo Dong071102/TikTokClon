@@ -28,6 +28,25 @@ export interface ScrapedWebResult {
   totalFound: number;
 }
 
+export interface ScrapeProgressInfo {
+  stage: "init" | "discovering" | "scraping" | "completed";
+  current: number;
+  total: number;
+  percent: number;
+  currentUrl?: string;
+  foundImages: number;
+  foundVideos: number;
+  message?: string;
+}
+
+export interface ScrapeMultipleOptions {
+  deepCrawl?: boolean;
+  maxDeepPerUrl?: number;
+  delayMs?: number;
+  concurrency?: number;
+  onProgress?: (progress: ScrapeProgressInfo) => void;
+}
+
 // Hàm chuẩn hoá URL và unescape ký tự JSON (ví dụ \/ -> /)
 function unescapeString(str: string): string {
   return str
@@ -681,12 +700,7 @@ function sleep(ms: number): Promise<void> {
 // Bóc tách media từ nhiều URL cùng lúc (Multi-page Web Scraper có kiểm soát tốc độ & chống chặn)
 export async function scrapeMultipleWebUrls(
   targetUrls: string[],
-  options?: {
-    deepCrawl?: boolean;
-    maxDeepPerUrl?: number;
-    delayMs?: number;
-    concurrency?: number;
-  }
+  options?: ScrapeMultipleOptions
 ): Promise<ScrapedWebResult> {
   // Lọc danh sách URL hợp lệ và loại bỏ trùng lặp URL đầu vào
   const cleanUrls = Array.from(
@@ -714,6 +728,18 @@ export async function scrapeMultipleWebUrls(
   if (deepCrawl) {
     for (let cIdx = 0; cIdx < cleanUrls.length; cIdx++) {
       const url = cleanUrls[cIdx];
+
+      options?.onProgress?.({
+        stage: "discovering",
+        current: cIdx + 1,
+        total: cleanUrls.length,
+        percent: Math.min(20, Math.round(((cIdx + 1) / cleanUrls.length) * 20)),
+        currentUrl: url,
+        foundImages: 0,
+        foundVideos: 0,
+        message: `Đang tìm liên kết bài viết từ danh mục (${cIdx + 1}/${cleanUrls.length})...`,
+      });
+
       // Nếu có nhiều trang danh mục, nghỉ nhẹ giữa các trang để tránh bị phát hiện spam
       if (cIdx > 0 && delayMs > 0) {
         await sleep(Math.min(delayMs, 800));
@@ -802,6 +828,17 @@ export async function scrapeMultipleWebUrls(
     finalUrlsToScrape = cleanUrls;
   }
 
+  options?.onProgress?.({
+    stage: "scraping",
+    current: 0,
+    total: finalUrlsToScrape.length,
+    percent: deepCrawl ? 20 : 5,
+    currentUrl: finalUrlsToScrape[0] || "",
+    foundImages: 0,
+    foundVideos: 0,
+    message: `Đã chuẩn bị ${finalUrlsToScrape.length} trang cần cào. Bắt đầu xử lý...`,
+  });
+
   // Quét theo từng đợt (chunks) có kiểm soát số luồng đồng thời và khoảng nghỉ (delay) chống chặn
   const results: PromiseSettledResult<{
     title: string;
@@ -809,12 +846,44 @@ export async function scrapeMultipleWebUrls(
     error?: string;
   }>[] = [];
 
+  let processedCount = 0;
+  let cumulativeImages = 0;
+  let cumulativeVideos = 0;
+
   for (let i = 0; i < finalUrlsToScrape.length; i += concurrency) {
     const chunk = finalUrlsToScrape.slice(i, i + concurrency);
     const chunkResults = await Promise.allSettled(
       chunk.map((url) => scrapeSingleWebUrl(url))
     );
     results.push(...chunkResults);
+
+    for (const res of chunkResults) {
+      if (res.status === "fulfilled" && res.value?.items) {
+        for (const item of res.value.items) {
+          if (item.type === "IMAGE") cumulativeImages++;
+          if (item.type === "VIDEO") cumulativeVideos++;
+        }
+      }
+    }
+    processedCount = Math.min(finalUrlsToScrape.length, processedCount + chunk.length);
+
+    const basePercent = deepCrawl ? 20 : 5;
+    const remainingPercent = 100 - basePercent - 5;
+    const currentPercent = Math.min(
+      95,
+      Math.round(basePercent + (processedCount / finalUrlsToScrape.length) * remainingPercent)
+    );
+
+    options?.onProgress?.({
+      stage: "scraping",
+      current: processedCount,
+      total: finalUrlsToScrape.length,
+      percent: currentPercent,
+      currentUrl: chunk[chunk.length - 1],
+      foundImages: cumulativeImages,
+      foundVideos: cumulativeVideos,
+      message: `Đang quét trang ${processedCount}/${finalUrlsToScrape.length}... (${cumulativeImages} ảnh, ${cumulativeVideos} video)`,
+    });
 
     // Nếu còn các link tiếp theo và có đặt độ trễ thì tạm nghỉ để server không chặn
     if (i + concurrency < finalUrlsToScrape.length && delayMs > 0) {
@@ -870,6 +939,17 @@ export async function scrapeMultipleWebUrls(
 
   const images = allItems.filter((m) => m.type === "IMAGE").map((m) => m.url);
   const videos = allItems.filter((m) => m.type === "VIDEO").map((m) => m.url);
+
+  options?.onProgress?.({
+    stage: "completed",
+    current: finalUrlsToScrape.length,
+    total: finalUrlsToScrape.length,
+    percent: 100,
+    currentUrl: finalUrlsToScrape[finalUrlsToScrape.length - 1],
+    foundImages: images.length,
+    foundVideos: videos.length,
+    message: `Hoàn tất! Tìm thấy ${images.length} hình ảnh và ${videos.length} video.`,
+  });
 
   return {
     pages,

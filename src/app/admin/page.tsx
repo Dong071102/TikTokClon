@@ -447,6 +447,16 @@ export default function AdminDashboardPage() {
   const [maxDeepPerUrl, setMaxDeepPerUrl] = useState(20);
   const [crawlDelayMs, setCrawlDelayMs] = useState(1000); // Khoảng nghỉ giữa các đợt cào (ms) chống chặn
   const [crawlConcurrency, setCrawlConcurrency] = useState(2); // Số luồng cào đồng thời
+  const [scrapeProgress, setScrapeProgress] = useState<{
+    stage?: "init" | "discovering" | "scraping" | "completed";
+    current: number;
+    total: number;
+    percent: number;
+    currentUrl?: string;
+    foundImages: number;
+    foundVideos: number;
+    message?: string;
+  } | null>(null);
   // Metadata & Xác thực cho Tab 2 (Web Scrape)
   const [mediaMetaMap, setMediaMetaMap] = useState<Record<string, { duration?: number; width?: number; height?: number; playable?: boolean; error?: boolean }>>({});
 
@@ -754,11 +764,24 @@ export default function AdminDashboardPage() {
     setScrapedMediaItems([]);
     setSelectedMediaUrls([]);
     setScrapedPages([]);
+    setScrapeProgress({
+      stage: "init",
+      current: 0,
+      total: 1,
+      percent: 0,
+      currentUrl: targetUrl.split(/[\r\n,]+/)[0]?.trim(),
+      foundImages: 0,
+      foundVideos: 0,
+      message: "Đang khởi tạo trình cào dữ liệu...",
+    });
 
     try {
       const res = await fetch("/api/admin/scrape-web-images", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream, application/json",
+        },
         body: JSON.stringify({
           url: targetUrl,
           deepCrawl: isDeepCrawl,
@@ -767,8 +790,56 @@ export default function AdminDashboardPage() {
           concurrency: crawlConcurrency,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Không thể bóc tách media từ trang web");
+
+      let json: any = null;
+
+      if (res.headers.get("content-type")?.includes("text/event-stream") && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() || "";
+
+          for (const block of blocks) {
+            if (!block.trim()) continue;
+            let eventName = "message";
+            let dataStr = "";
+            for (const line of block.split("\n")) {
+              if (line.startsWith("event: ")) {
+                eventName = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                dataStr = line.slice(6).trim();
+              }
+            }
+            if (dataStr) {
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (eventName === "progress") {
+                  setScrapeProgress(parsed);
+                } else if (eventName === "complete") {
+                  json = parsed;
+                } else if (eventName === "error") {
+                  throw new Error(parsed.error || "Lỗi khi quét media từ các trang web");
+                }
+              } catch (e: any) {
+                if (eventName === "error") throw e;
+              }
+            }
+          }
+        }
+      } else {
+        json = await res.json();
+      }
+
+      if (!res.ok && !json) throw new Error("Không thể bóc tách media từ trang web");
+      if (json?.error) throw new Error(json.error);
+      if (!json?.data) throw new Error("Không nhận được dữ liệu media từ máy chủ");
 
       const items = json.data.items || [];
       const pages = json.data.pages || [];
@@ -782,12 +853,23 @@ export default function AdminDashboardPage() {
       // Mặc định chọn tất cả media tìm thấy
       setSelectedMediaUrls(items.map((m: any) => m.url));
 
+      setScrapeProgress({
+        stage: "completed",
+        current: pages.length || 1,
+        total: pages.length || 1,
+        percent: 100,
+        foundImages: totalImages,
+        foundVideos: totalVideos,
+        message: `Hoàn tất! Tìm thấy ${totalImages} hình ảnh và ${totalVideos} video.`,
+      });
+
       setWebScrapeMsg({
         type: "success",
         text: `Quét thành công ${pages.length} trang web! Tìm thấy ${totalImages} hình ảnh và ${totalVideos} video. Hãy chọn các media bạn muốn lưu.`,
       });
     } catch (err: any) {
       setWebScrapeMsg({ type: "error", text: err.message });
+      setScrapeProgress(null);
     } finally {
       setIsScrapingWeb(false);
     }
@@ -2428,6 +2510,98 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {/* THANH TIẾN ĐỘ QUÉT DỮ LIỆU (PROGRESS BAR) */}
+              {(isScrapingWeb || scrapeProgress) && (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-3.5 shadow-xl animate-fade-in relative overflow-hidden">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isScrapingWeb ? (
+                        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0 shadow-sm shadow-blue-500/10">
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0 shadow-sm shadow-emerald-500/10">
+                          <Check className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm text-neutral-200">
+                            {scrapeProgress?.message || (isScrapingWeb ? "Đang xử lý dữ liệu..." : "Quét hoàn tất")}
+                          </span>
+                          {scrapeProgress?.total ? (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-400 font-mono">
+                              Trang {scrapeProgress.current}/{scrapeProgress.total}
+                            </span>
+                          ) : null}
+                        </div>
+                        {scrapeProgress?.currentUrl && (
+                          <div
+                            className="text-[11px] text-neutral-400 truncate max-w-sm sm:max-w-lg md:max-w-xl font-mono mt-0.5"
+                            title={scrapeProgress.currentUrl}
+                          >
+                            Đang xử lý: {scrapeProgress.currentUrl}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <span className="text-xl font-black text-blue-400 font-mono tracking-tight">
+                          {Math.round(scrapeProgress?.percent || (isScrapingWeb ? 10 : 100))}%
+                        </span>
+                      </div>
+                      {!isScrapingWeb && (
+                        <button
+                          type="button"
+                          onClick={() => setScrapeProgress(null)}
+                          className="p-1 rounded-lg hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 transition"
+                          title="Đóng thông báo tiến độ"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Thanh Progress Bar */}
+                  <div className="w-full h-3 bg-neutral-800/90 rounded-full overflow-hidden p-0.5 border border-neutral-700/60 shadow-inner relative">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ease-out ${
+                        isScrapingWeb
+                          ? "bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 shadow-md shadow-blue-500/30"
+                          : "bg-emerald-500"
+                      }`}
+                      style={{
+                        width: `${Math.max(4, Math.min(100, scrapeProgress?.percent || (isScrapingWeb ? 10 : 100)))}%`,
+                      }}
+                    />
+                  </div>
+
+                  {/* Các chỉ số thống kê & trạng thái thời gian thực */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs text-neutral-400">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800/70 border border-neutral-700/50 text-neutral-300">
+                        <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Ảnh tìm thấy: <b className="text-white font-mono">{scrapeProgress?.foundImages || 0}</b></span>
+                      </span>
+                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800/70 border border-neutral-700/50 text-neutral-300">
+                        <Film className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Video tìm thấy: <b className="text-white font-mono">{scrapeProgress?.foundVideos || 0}</b></span>
+                      </span>
+                    </div>
+
+                    {isScrapingWeb && (
+                      <span className="text-[11px] text-neutral-400 italic flex items-center gap-1 font-medium">
+                        <Clock className="w-3 h-3 text-neutral-400 animate-spin" />
+                        Đang đồng bộ tiến trình...
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* KẾT QUẢ QUÉT VÀ DANH SÁCH MEDIA */}
               {scrapedMediaItems.length > 0 && (
