@@ -185,8 +185,76 @@ async function checkVideoPlayable(v: {
       });
       clearTimeout(timeout);
 
-      // Status 200 hoặc 206 -> Video chạy tốt
+      // Status 200 hoặc 206 -> Kiểm tra chuyên sâu cho file HLS (.m3u8)
       if (res.ok || res.status === 206) {
+        if (isM3u8) {
+          try {
+            const text = await res.text();
+            if (!text.includes("#EXTM3U")) {
+              const result = {
+                unplayable: true,
+                reason: "Playlist HLS không hợp lệ hoặc bị server chặn",
+              };
+              videoPlayableCache.set(v.mediaUrl, result);
+              return result;
+            }
+
+            // Tìm phân đoạn video đầu tiên (.ts / .png)
+            const lines = text.split("\n");
+            let firstSeg = "";
+            for (const line of lines) {
+              const tr = line.trim();
+              if (tr && !tr.startsWith("#")) {
+                firstSeg = tr;
+                break;
+              }
+            }
+
+            if (!firstSeg) {
+              const result = {
+                unplayable: true,
+                reason: "Playlist HLS rỗng (không có phân đoạn video nào)",
+              };
+              videoPlayableCache.set(v.mediaUrl, result);
+              return result;
+            }
+
+            // Kiểm tra phân đoạn đầu tiên có tải được dữ liệu hay không
+            const segAbsUrl = new URL(firstSeg, v.mediaUrl).toString();
+            const segCtrl = new AbortController();
+            const segTo = setTimeout(() => segCtrl.abort(), 3500);
+            try {
+              const segRes = await fetch(segAbsUrl, {
+                method: "GET",
+                signal: segCtrl.signal,
+                headers: {
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                  ...(origin ? { Referer: origin + "/" } : {}),
+                  Range: "bytes=0-50",
+                },
+              });
+              clearTimeout(segTo);
+              if (!segRes.ok && segRes.status !== 206) {
+                const result = {
+                  unplayable: true,
+                  reason: `Phân đoạn video đầu tiên bị lỗi (HTTP ${segRes.status})`,
+                };
+                videoPlayableCache.set(v.mediaUrl, result);
+                return result;
+              }
+            } catch {
+              clearTimeout(segTo);
+              const result = {
+                unplayable: true,
+                reason: "Không thể kết nối đến phân đoạn video (.ts)",
+              };
+              videoPlayableCache.set(v.mediaUrl, result);
+              return result;
+            }
+          } catch {}
+        }
+
         const result = { unplayable: false };
         videoPlayableCache.set(v.mediaUrl, result);
         return result;

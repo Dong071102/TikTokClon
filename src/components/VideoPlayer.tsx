@@ -157,11 +157,14 @@ export default function VideoPlayer({
           }
         });
 
+        let isProxyTried = false;
+
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              const proxyUrl = `/api/proxy?url=${encodeURIComponent(src)}`;
-              if (hls.url !== proxyUrl) {
+              if (!isProxyTried) {
+                isProxyTried = true;
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(src)}`;
                 hls.loadSource(proxyUrl);
                 hls.startLoad();
               } else {
