@@ -184,6 +184,11 @@ export default function VideoPlayer({
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
     };
   }, [src]);
 
@@ -330,7 +335,11 @@ export default function VideoPlayer({
     if (!video) return;
 
     if (video.paused) {
-      video.play();
+      video.play().catch((err) => {
+        if (err.name !== "AbortError") {
+          console.warn("[VideoPlayer] play error:", err);
+        }
+      });
       setIsPlaying(true);
     } else {
       video.pause();
@@ -521,7 +530,6 @@ export default function VideoPlayer({
       >
         <video
           ref={videoRef}
-          src={src}
           playsInline
           loop
           preload="metadata"
@@ -554,6 +562,10 @@ export default function VideoPlayer({
           onPause={() => setIsPlaying(false)}
           onError={(e) => {
             const target = e.currentTarget;
+            if (target.error && target.error.code === 1) {
+              // MEDIA_ERR_ABORTED - Quá trình tải bị huỷ bởi trình duyệt, bỏ qua an toàn
+              return;
+            }
             if (!src.includes(".m3u8") && !target.src.includes("/api/proxy")) {
               target.src = `/api/proxy?url=${encodeURIComponent(src)}`;
               target.load();

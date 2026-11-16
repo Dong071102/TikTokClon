@@ -582,60 +582,81 @@ export default function TikTokFeed() {
           </div>
         )}
 
-        {items.map((item, idx) => (
-          <div
-            key={item.feedKey || item.id}
-            ref={(el) => {
-              itemRefs.current[idx] = el;
-            }}
-            data-index={idx}
-            className="w-full h-[100dvh] snap-start relative flex items-center justify-center bg-black overflow-hidden"
-          >
-            {item.type === "VIDEO" ? (
-              <VideoPlayer
-                src={item.mediaUrl}
-                isActive={idx === activeIndex}
-                isMuted={isMuted}
-                toggleMute={() => setIsMuted((prev) => !prev)}
-                defaultRotate={item.defaultRotate}
-                isLandscape={item.isLandscape}
-                isFavorite={favorites.includes(item.id)}
-                onToggleFavorite={() => toggleFavorite(item.id)}
-                initialDuration={item.duration}
-                width={item.width}
-                height={item.height}
-              />
-            ) : item.galleryUrls && item.galleryUrls.length > 1 ? (
-              <GalleryViewer
-                images={item.galleryUrls}
-                alt={item.title || "Gallery"}
-                isActive={idx === activeIndex}
-                isFavorite={favorites.includes(item.id)}
-                onToggleFavorite={() => toggleFavorite(item.id)}
-              />
-            ) : (
-              <ImageViewer
-                src={item.mediaUrl}
-                alt={item.title || "Image"}
-                isActive={idx === activeIndex}
-                isFavorite={favorites.includes(item.id)}
-                onToggleFavorite={() => toggleFavorite(item.id)}
-              />
-            )}
+        {items.map((item, idx) => {
+          // Chỉ mount Video/Gallery trong phạm vi ±1 slide xung quanh activeIndex để tiết kiệm RAM & ngăn AbortError
+          const isNear = Math.abs(idx - activeIndex) <= 1;
 
-            {/* Overlay hiển thị tags & title */}
-            <TagOverlay
-              title={item.title}
-              tags={item.tags}
-              activeTag={activeTag}
-              onSelectTag={(tag) => {
-                setShowFavoritesOnly(false);
-                setActiveTag(tag);
+          return (
+            <div
+              key={item.feedKey || item.id}
+              ref={(el) => {
+                itemRefs.current[idx] = el;
               }}
-              onOpenTagDrawer={() => setIsMenuOpen(true)}
-            />
-          </div>
-        ))}
+              data-index={idx}
+              className="w-full h-[100dvh] snap-start relative flex items-center justify-center bg-black overflow-hidden"
+            >
+              {isNear ? (
+                item.type === "VIDEO" ? (
+                  <VideoPlayer
+                    src={item.mediaUrl}
+                    isActive={idx === activeIndex}
+                    isMuted={isMuted}
+                    toggleMute={() => setIsMuted((prev) => !prev)}
+                    defaultRotate={item.defaultRotate}
+                    isLandscape={item.isLandscape}
+                    isFavorite={favorites.includes(item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id)}
+                    initialDuration={item.duration}
+                    width={item.width}
+                    height={item.height}
+                  />
+                ) : item.galleryUrls && item.galleryUrls.length > 1 ? (
+                  <GalleryViewer
+                    images={item.galleryUrls}
+                    alt={item.title || "Gallery"}
+                    isActive={idx === activeIndex}
+                    isFavorite={favorites.includes(item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id)}
+                  />
+                ) : (
+                  <ImageViewer
+                    src={item.mediaUrl}
+                    alt={item.title || "Image"}
+                    isActive={idx === activeIndex}
+                    isFavorite={favorites.includes(item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id)}
+                  />
+                )
+              ) : (
+                <div className="w-full h-full bg-neutral-950 flex items-center justify-center select-none pointer-events-none">
+                  {item.thumbnailUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.thumbnailUrl}
+                      alt={item.title || "thumbnail"}
+                      className="w-full h-full object-contain opacity-30 select-none pointer-events-none"
+                      loading="lazy"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Overlay hiển thị tags & title */}
+              {isNear && (
+                <TagOverlay
+                  title={item.title}
+                  tags={item.tags}
+                  activeTag={activeTag}
+                  onSelectTag={(tag) => {
+                    setShowFavoritesOnly(false);
+                    setActiveTag(tag);
+                  }}
+                  onOpenTagDrawer={() => setIsMenuOpen(true)}
+                />
+              )}
+            </div>
+          );
+        })}
 
         {isLoading && (
           <div className="w-full h-20 flex items-center justify-center text-white/50">
