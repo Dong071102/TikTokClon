@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     const responseHeaders = new Headers();
     responseHeaders.set("Content-Type", response.headers.get("content-type") || "video/mp4");
     responseHeaders.set("Access-Control-Allow-Origin", "*");
+    responseHeaders.set("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
 
     if (response.headers.get("content-range")) {
       responseHeaders.set("Content-Range", response.headers.get("content-range")!);

@@ -44,8 +44,9 @@ model MediaItem {
   updatedAt    DateTime       @updatedAt
   tags         MediaItemTag[]
 
-  @@index([type])
+  @@index([type, createdAt])
   @@index([createdAt])
+  @@index([type])
 }
 
 model Tag {
