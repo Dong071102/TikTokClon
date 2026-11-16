@@ -20,6 +20,79 @@ interface GalleryGridItemProps {
   rootRef: React.RefObject<HTMLDivElement | null>;
 }
 
+interface GallerySlideProps {
+  src: string;
+  alt: string;
+  idx: number;
+  isCurrent: boolean;
+  isNear: boolean;
+}
+
+function GallerySlide({ src, alt, idx, isCurrent, isNear }: GallerySlideProps) {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [isProxyTried, setIsProxyTried] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(src);
+    setIsProxyTried(false);
+    setHasError(false);
+    setIsLoaded(false);
+  }, [src]);
+
+  return (
+    <div className="flex-[0_0_100%] min-w-0 h-full relative flex items-center justify-center bg-black overflow-hidden select-none">
+      {isNear ? (
+        <>
+          {/* Skeleton spinner khi đang tải */}
+          {!isLoaded && !hasError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black">
+              <div className="w-8 h-8 border-2 border-white/20 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+          )}
+
+          {!hasError ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imgSrc}
+              alt={`${alt} - ${idx + 1}`}
+              referrerPolicy="no-referrer"
+              className={`max-w-full max-h-[100dvh] w-auto h-auto object-contain pointer-events-auto select-none m-auto transition-opacity duration-200 ${
+                isLoaded ? "opacity-100" : "opacity-0"
+              }`}
+              style={{
+                maxHeight: "100dvh",
+                maxWidth: "100vw",
+                objectFit: "contain",
+                margin: "auto",
+              }}
+              loading={isCurrent ? "eager" : "lazy"}
+              onLoad={() => setIsLoaded(true)}
+              onError={() => {
+                if (!isProxyTried && !imgSrc.includes("/api/proxy")) {
+                  setIsProxyTried(true);
+                  setImgSrc(`/api/proxy?url=${encodeURIComponent(src)}`);
+                } else {
+                  setHasError(true);
+                  setIsLoaded(true);
+                }
+              }}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-neutral-400 gap-2 p-4 text-center">
+              <ImageOff className="w-8 h-8 text-neutral-600" />
+              <span className="text-xs text-neutral-400">Không thể tải ảnh này</span>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="w-full h-full bg-black" />
+      )}
+    </div>
+  );
+}
+
 function GalleryGridItem({
   src,
   idx,
@@ -193,8 +266,23 @@ export default function GalleryViewer({
     emblaApi.on("reInit", onSelect);
     return () => {
       emblaApi.off("select", onSelect);
+      emblaApi.off("reInit", onSelect);
     };
   }, [emblaApi, onSelect]);
+
+  // Điều hướng bằng phím mũi tên trái/phải trên máy tính khi đang xem
+  useEffect(() => {
+    if (!isActive || isGridOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        emblaApi?.scrollPrev();
+      } else if (e.key === "ArrowRight") {
+        emblaApi?.scrollNext();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActive, isGridOpen, emblaApi]);
 
   // Tự động quay về ảnh đầu tiên và đóng modal khi cuộn bài khác
   useEffect(() => {
@@ -223,25 +311,14 @@ export default function GalleryViewer({
       <div className="overflow-hidden w-full h-full" ref={emblaRef}>
         <div className="flex h-full touch-pan-y">
           {images.map((src, idx) => (
-            <div
+            <GallerySlide
               key={`${src}-${idx}`}
-              className="flex-[0_0_100%] min-w-0 h-full relative flex items-center justify-center bg-black overflow-hidden select-none"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={src}
-                alt={`${alt} - ${idx + 1}`}
-                referrerPolicy="no-referrer"
-                className="max-w-full max-h-[100dvh] w-auto h-auto object-contain pointer-events-auto select-none m-auto"
-                style={{
-                  maxHeight: "100dvh",
-                  maxWidth: "100vw",
-                  objectFit: "contain",
-                  margin: "auto",
-                }}
-                loading={idx === 0 ? "eager" : "lazy"}
-              />
-            </div>
+              src={src}
+              alt={alt}
+              idx={idx}
+              isCurrent={idx === currentIndex}
+              isNear={Math.abs(idx - currentIndex) <= 2}
+            />
           ))}
         </div>
       </div>
@@ -283,19 +360,21 @@ export default function GalleryViewer({
         </button>
       )}
 
-      {/* Các chấm chỉ vị trí ảnh ở chân màn hình (Dots indicator) - nâng cao hơn 0.5cm tránh cấn thanh vuốt Home */}
-      <div className="absolute bottom-5 sm:bottom-6 left-0 right-0 z-30 flex items-center justify-center gap-1.5 pointer-events-none">
-        {images.map((_, idx) => (
-          <div
-            key={idx}
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              idx === currentIndex
-                ? "w-6 bg-white shadow-md shadow-white/50"
-                : "w-1.5 bg-white/40"
-            }`}
-          />
-        ))}
-      </div>
+      {/* Các chấm chỉ vị trí ảnh ở chân màn hình (Dots indicator) - chỉ hiển thị nếu <= 15 ảnh để tránh tràn giao diện khi album lớn */}
+      {images.length <= 15 && (
+        <div className="absolute bottom-5 sm:bottom-6 left-0 right-0 z-30 flex items-center justify-center gap-1.5 pointer-events-none px-4">
+          {images.map((_, idx) => (
+            <div
+              key={idx}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                idx === currentIndex
+                  ? "w-6 bg-white shadow-md shadow-white/50"
+                  : "w-1.5 bg-white/40"
+              }`}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Nút Yêu thích (Heart) phía bên phải */}
       {onToggleFavorite && (
