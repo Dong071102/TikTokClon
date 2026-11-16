@@ -2,6 +2,160 @@ import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import fs from "fs";
+import sharp from "sharp";
+
+const imageDimensionCache = new Map<string, { width: number; height: number; error?: boolean } | null>();
+
+async function probeImageSize(urlOrPath: string): Promise<{ width: number; height: number; error?: boolean } | null> {
+  const cached = imageDimensionCache.get(urlOrPath);
+  if (cached !== undefined) return cached;
+
+  try {
+    if (urlOrPath.startsWith("http")) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+
+      let origin = "";
+      try {
+        origin = new URL(urlOrPath).origin;
+      } catch {}
+
+      const res = await fetch(urlOrPath, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          ...(origin ? { Referer: origin + "/" } : {}),
+        },
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const result = { width: 0, height: 0, error: true };
+        imageDimensionCache.set(urlOrPath, result);
+        return result;
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      const metadata = await sharp(Buffer.from(arrayBuffer)).metadata();
+      const result = {
+        width: metadata.width || 0,
+        height: metadata.height || 0,
+        error: false,
+      };
+      imageDimensionCache.set(urlOrPath, result);
+      return result;
+    } else if (fs.existsSync(urlOrPath)) {
+      const metadata = await sharp(urlOrPath).metadata();
+      const result = {
+        width: metadata.width || 0,
+        height: metadata.height || 0,
+        error: false,
+      };
+      imageDimensionCache.set(urlOrPath, result);
+      return result;
+    }
+  } catch {
+    const result = { width: 0, height: 0, error: true };
+    imageDimensionCache.set(urlOrPath, result);
+    return result;
+  }
+
+  return null;
+}
+
+// Hàm quét và lọc sạch các ảnh nhỏ / ảnh hỏng bên trong galleryUrls của từng Album
+async function processGalleriesSmallImages(minSize: number, dryRun: boolean) {
+  const galleries = await prisma.mediaItem.findMany({
+    where: {
+      type: "IMAGE",
+      galleryUrls: { isEmpty: false },
+    },
+    select: {
+      id: true,
+      title: true,
+      mediaUrl: true,
+      galleryUrls: true,
+      width: true,
+      height: true,
+    },
+  });
+
+  let totalSmallImagesRemoved = 0;
+  let galleriesUpdatedCount = 0;
+  let galleriesDeletedCount = 0;
+  const affectedGalleries: Array<{
+    id: string;
+    title: string | null;
+    originalCount: number;
+    newCount: number;
+    removedCount: number;
+    isDeleted: boolean;
+  }> = [];
+
+  for (const gallery of galleries) {
+    const originalUrls = gallery.galleryUrls;
+    if (!originalUrls || originalUrls.length === 0) continue;
+
+    const validUrls: string[] = [];
+    const removedUrls: string[] = [];
+    let newFirstWidth: number | null = null;
+    let newFirstHeight: number | null = null;
+
+    for (const url of originalUrls) {
+      const dim = await probeImageSize(url);
+      if (dim && (dim.error || dim.width < minSize || dim.height < minSize)) {
+        removedUrls.push(url);
+      } else {
+        validUrls.push(url);
+        if (validUrls.length === 1 && dim && !dim.error) {
+          newFirstWidth = dim.width;
+          newFirstHeight = dim.height;
+        }
+      }
+    }
+
+    if (removedUrls.length > 0) {
+      totalSmallImagesRemoved += removedUrls.length;
+      const isDeleted = validUrls.length === 0;
+
+      affectedGalleries.push({
+        id: gallery.id,
+        title: gallery.title,
+        originalCount: originalUrls.length,
+        newCount: validUrls.length,
+        removedCount: removedUrls.length,
+        isDeleted,
+      });
+
+      if (!dryRun) {
+        if (isDeleted) {
+          await prisma.mediaItem.delete({ where: { id: gallery.id } });
+          galleriesDeletedCount++;
+        } else {
+          await prisma.mediaItem.update({
+            where: { id: gallery.id },
+            data: {
+              galleryUrls: validUrls,
+              mediaUrl: validUrls[0],
+              width: newFirstWidth || gallery.width,
+              height: newFirstHeight || gallery.height,
+            },
+          });
+          galleriesUpdatedCount++;
+        }
+      }
+    }
+  }
+
+  return {
+    totalGalleriesScanned: galleries.length,
+    totalSmallImagesRemoved,
+    galleriesUpdatedCount,
+    galleriesDeletedCount,
+    affectedGalleries,
+  };
+}
 
 export async function GET(request: Request) {
   const admin = await getCurrentAdmin();
@@ -56,7 +210,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action, threshold = 400, ids = [] } = body;
 
-    // 1. Xóa tất cả ảnh có kích thước nhỏ hơn ngưỡng (threshold)
+    // 1. Xóa tất cả ảnh có kích thước nhỏ hơn ngưỡng (threshold) bao gồm cả ảnh đơn và ảnh trong Album/Gallery
     if (action === "DELETE_SMALL_IMAGES") {
       const minSize = Math.max(100, Math.min(2000, Number(threshold) || 400));
       const smallItems = await prisma.mediaItem.findMany({
@@ -70,14 +224,6 @@ export async function POST(request: Request) {
         select: { id: true, localPath: true },
       });
 
-      if (smallItems.length === 0) {
-        return NextResponse.json({
-          success: true,
-          count: 0,
-          message: `Không tìm thấy hình ảnh nào nhỏ hơn ${minSize}px`,
-        });
-      }
-
       // Xóa file cục bộ nếu có
       for (const item of smallItems) {
         if (item.localPath && fs.existsSync(item.localPath)) {
@@ -89,17 +235,62 @@ export async function POST(request: Request) {
         }
       }
 
-      // Xóa khỏi Database
-      const deleteResult = await prisma.mediaItem.deleteMany({
-        where: {
-          id: { in: smallItems.map((item) => item.id) },
-        },
-      });
+      // Xóa các bản ghi ảnh đơn / bài nhỏ khỏi Database
+      let deletedSingleCount = 0;
+      if (smallItems.length > 0) {
+        const deleteResult = await prisma.mediaItem.deleteMany({
+          where: {
+            id: { in: smallItems.map((item) => item.id) },
+          },
+        });
+        deletedSingleCount = deleteResult.count;
+      }
+
+      // Lọc sạch toàn bộ ảnh nhỏ nằm bên trong mảng galleryUrls của các bài Album/Gallery
+      const galleryResult = await processGalleriesSmallImages(minSize, false);
+
+      const messageParts = [];
+      if (deletedSingleCount > 0) {
+        messageParts.push(`Đã xóa ${deletedSingleCount} bài đăng ảnh có kích thước nhỏ`);
+      }
+      if (galleryResult.totalSmallImagesRemoved > 0) {
+        messageParts.push(
+          `Đã loại bỏ ${galleryResult.totalSmallImagesRemoved} ảnh nhỏ trong ${galleryResult.galleriesUpdatedCount} album${
+            galleryResult.galleriesDeletedCount > 0 ? ` (xóa ${galleryResult.galleriesDeletedCount} album rỗng)` : ""
+          }`
+        );
+      }
+
+      const finalMessage =
+        messageParts.length > 0
+          ? messageParts.join(", và ") + ` (< ${minSize}px)!`
+          : `Không phát hiện hình ảnh nào nhỏ hơn ${minSize}px cần dọn dẹp.`;
 
       return NextResponse.json({
         success: true,
-        count: deleteResult.count,
-        message: `Đã xóa thành công ${deleteResult.count} hình ảnh có kích thước nhỏ (< ${minSize}px)`,
+        count: deletedSingleCount + galleryResult.totalSmallImagesRemoved,
+        deletedSingleCount,
+        galleryResult,
+        message: finalMessage,
+      });
+    }
+
+    // 1.2 Quét hoặc Lọc chuyên sâu ảnh nhỏ / ảnh hỏng bên trong Album (Gallery)
+    if (action === "SCAN_GALLERY_SMALL_IMAGES" || action === "CLEAN_GALLERY_SMALL_IMAGES") {
+      const minSize = Math.max(100, Math.min(2000, Number(threshold) || 400));
+      const isDryRun = action === "SCAN_GALLERY_SMALL_IMAGES";
+      const galleryResult = await processGalleriesSmallImages(minSize, isDryRun);
+
+      return NextResponse.json({
+        success: true,
+        action,
+        threshold: minSize,
+        ...galleryResult,
+        message: isDryRun
+          ? `Quét xong ${galleryResult.totalGalleriesScanned} album: Phát hiện ${galleryResult.totalSmallImagesRemoved} ảnh nhỏ/lỗi trong ${galleryResult.affectedGalleries.length} album.`
+          : `Đã loại bỏ ${galleryResult.totalSmallImagesRemoved} ảnh nhỏ trong ${galleryResult.galleriesUpdatedCount} album${
+              galleryResult.galleriesDeletedCount > 0 ? ` (đã xóa ${galleryResult.galleriesDeletedCount} album rỗng)` : ""
+            }!`,
       });
     }
 

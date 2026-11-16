@@ -166,6 +166,7 @@ export default function AdminDashboardPage() {
   const [isCleaningSmallImages, setIsCleaningSmallImages] = useState(false);
   const [isCleaningUnplayable, setIsCleaningUnplayable] = useState(false);
   const [isScanningUnplayable, setIsScanningUnplayable] = useState(false);
+  const [isCleaningGalleries, setIsCleaningGalleries] = useState(false);
 
   // Chọn & Thao tác hàng loạt (Bulk actions)
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -555,7 +556,14 @@ export default function AdminDashboardPage() {
   // Lưu các ảnh đã chọn thành 1 bài viết Gallery Album
   const handleSaveImagesAsGallery = async () => {
     const selectedImages = scrapedMediaItems
-      .filter((m) => m.type === "IMAGE" && selectedMediaUrls.includes(m.url))
+      .filter((m) => {
+        if (m.type !== "IMAGE" || !selectedMediaUrls.includes(m.url)) return false;
+        const meta = mediaMetaMap[m.url];
+        if (meta && ((meta.width && meta.width < 400) || (meta.height && meta.height < 400))) {
+          return false;
+        }
+        return true;
+      })
       .map((m) => m.url);
 
     if (selectedImages.length === 0) {
@@ -674,7 +682,14 @@ export default function AdminDashboardPage() {
   // Lưu tất cả đã chọn: Gom các ảnh thành 1 bài Gallery + Lưu từng video thành bài riêng
   const handleSaveAllSelectedMedia = async () => {
     const selectedImages = scrapedMediaItems
-      .filter((m) => m.type === "IMAGE" && selectedMediaUrls.includes(m.url))
+      .filter((m) => {
+        if (m.type !== "IMAGE" || !selectedMediaUrls.includes(m.url)) return false;
+        const meta = mediaMetaMap[m.url];
+        if (meta && ((meta.width && meta.width < 400) || (meta.height && meta.height < 400))) {
+          return false;
+        }
+        return true;
+      })
       .map((m) => m.url);
     const selectedVideos = scrapedMediaItems.filter(
       (m) => m.type === "VIDEO" && selectedMediaUrls.includes(m.url)
@@ -1005,6 +1020,39 @@ export default function AdminDashboardPage() {
       setBulkActionMsg({ type: "error", text: err.message || "Lỗi xóa ảnh nhỏ" });
     } finally {
       setIsCleaningSmallImages(false);
+    }
+  };
+
+  // Quét và lọc sạch ảnh nhỏ (<400px) hoặc ảnh lỗi tải bên trong tất cả các bài Album (Gallery)
+  const handleCleanGallerySmallImages = async () => {
+    if (
+      !confirm(
+        "Hệ thống sẽ quét toàn bộ các Album (Gallery), kiểm tra kích thước từng ảnh và tự động loại bỏ các ảnh nhỏ hơn 400px hoặc ảnh hỏng ra khỏi Album (hoặc xóa Album nếu không còn ảnh nào). Tiếp tục?"
+      )
+    ) {
+      return;
+    }
+
+    setIsCleaningGalleries(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "CLEAN_GALLERY_SMALL_IMAGES", threshold: 400 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi lọc ảnh nhỏ trong Album");
+
+      setBulkActionMsg({
+        type: "success",
+        text: data.message || `Đã hoàn tất lọc Album! Đã loại bỏ ${data.totalSmallImagesRemoved} ảnh nhỏ.`,
+      });
+      loadMediaList(mediaPage, searchTag, listFormatFilter, mediaLimit);
+    } catch (err: any) {
+      setBulkActionMsg({ type: "error", text: err.message || "Lỗi lọc ảnh nhỏ Album" });
+    } finally {
+      setIsCleaningGalleries(false);
     }
   };
 
@@ -2921,6 +2969,21 @@ export default function AdminDashboardPage() {
                     <Search className="w-3.5 h-3.5 text-amber-400" />
                   )}
                   <span>{isScanningUnplayable ? "Đang quét video..." : "Quét video lỗi"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCleanGallerySmallImages}
+                  disabled={isCleaningGalleries}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-200 font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  title="Quét và tự động lọc bỏ các ảnh nhỏ (< 400px) hoặc ảnh lỗi bên trong các bài Album (Gallery)"
+                >
+                  {isCleaningGalleries ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-pink-400" />
+                  ) : (
+                    <Layers className="w-3.5 h-3.5 text-pink-400" />
+                  )}
+                  <span>{isCleaningGalleries ? "Đang lọc Album..." : "Lọc ảnh nhỏ Album"}</span>
                 </button>
 
                 {unplayableVideoIds.length > 0 && (
