@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get("limit") || "12", 10);
   const tag = searchParams.get("tag");
   const idsParam = searchParams.get("ids");
+  const targetId = searchParams.get("id") || searchParams.get("mediaId");
   const sort = searchParams.get("sort") || "newest"; // "newest" | "oldest" | "random"
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
@@ -92,10 +93,43 @@ export async function GET(request: Request) {
   }
 
   try {
+    const formatItem = (item: any) => ({
+      id: item.id,
+      type: item.type,
+      mediaUrl: item.mediaUrl,
+      galleryUrls: item.galleryUrls || [],
+      thumbnailUrl: item.thumbnailUrl,
+      title: item.title,
+      isLandscape: item.isLandscape,
+      defaultRotate: item.defaultRotate,
+      duration: item.duration,
+      width: item.width,
+      height: item.height,
+      createdAt: item.createdAt,
+      tags: (item.tags || []).map((t: any) => t.tag?.name || t.name || t),
+    });
+
+    // Nếu người dùng yêu cầu mở đích danh 1 video (vd: từ link admin), ưu tiên đưa video đó lên đầu
+    let initialItem: any = null;
+    if (targetId && !cursor) {
+      initialItem = await prisma.mediaItem.findUnique({
+        where: { id: targetId },
+        include: { tags: { include: { tag: true } } },
+      });
+    }
+
     // Chế độ Ngẫu nhiên (Random Mode)
     if (sort === "random") {
       const totalCount = await prisma.mediaItem.count({ where });
       if (totalCount === 0) {
+        if (initialItem) {
+          return NextResponse.json({
+            success: true,
+            items: [formatItem(initialItem)],
+            nextCursor: null,
+            totalCount: 1,
+          });
+        }
         return NextResponse.json({ success: true, items: [], nextCursor: null });
       }
 
@@ -116,24 +150,13 @@ export async function GET(request: Request) {
 
       // Xáo trộn ngẫu nhiên danh sách trả về
       const shuffled = items.sort(() => Math.random() - 0.5);
+      const listToReturn = initialItem
+        ? [initialItem, ...shuffled.filter((i) => i.id !== initialItem.id)]
+        : shuffled;
 
       return NextResponse.json({
         success: true,
-        items: shuffled.map((item) => ({
-          id: item.id,
-          type: item.type,
-          mediaUrl: item.mediaUrl,
-          galleryUrls: item.galleryUrls || [],
-          thumbnailUrl: item.thumbnailUrl,
-          title: item.title,
-          isLandscape: item.isLandscape,
-          defaultRotate: item.defaultRotate,
-          duration: item.duration,
-          width: item.width,
-          height: item.height,
-          createdAt: item.createdAt,
-          tags: item.tags.map((t) => t.tag.name),
-        })),
+        items: listToReturn.map(formatItem),
         // nextCursor luôn có giá trị để cuộn vô tận không bao giờ hết
         nextCursor: "random-infinite",
         totalCount,
@@ -162,23 +185,13 @@ export async function GET(request: Request) {
       nextCursor = nextItem ? nextItem.id : null;
     }
 
+    const listToReturn = initialItem
+      ? [initialItem, ...items.filter((i) => i.id !== initialItem.id)]
+      : items;
+
     return NextResponse.json({
       success: true,
-      items: items.map((item) => ({
-        id: item.id,
-        type: item.type,
-        mediaUrl: item.mediaUrl,
-        galleryUrls: item.galleryUrls || [],
-        thumbnailUrl: item.thumbnailUrl,
-        title: item.title,
-        isLandscape: item.isLandscape,
-        defaultRotate: item.defaultRotate,
-        duration: item.duration,
-        width: item.width,
-        height: item.height,
-        createdAt: item.createdAt,
-        tags: item.tags.map((t) => t.tag.name),
-      })),
+      items: listToReturn.map(formatItem),
       nextCursor,
     });
   } catch (err: any) {

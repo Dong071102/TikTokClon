@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Hls from "hls.js";
 import {
   Link as LinkIcon,
   Upload,
@@ -62,6 +63,245 @@ function renderAdminTextWithLinks(text?: string | null) {
     }
     return part;
   });
+}
+
+interface AdminVideoPreviewProps {
+  item: any;
+  isUnplayable: boolean;
+  activeMobilePreviewId: string | null;
+  onSetMobilePreview: (id: string | null) => void;
+  onJumpToVideo: (item: any) => void;
+}
+
+function AdminVideoPreview({
+  item,
+  isUnplayable,
+  activeMobilePreviewId,
+  onSetMobilePreview,
+  onJumpToVideo,
+}: AdminVideoPreviewProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const isMobileActive = activeMobilePreviewId === item.id;
+
+  // Dọn dẹp HLS và timer khi unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, []);
+
+  // Đồng bộ khi mobile chuyển sang xem trước card khác
+  useEffect(() => {
+    if (activeMobilePreviewId !== null && activeMobilePreviewId !== item.id && isPreviewing) {
+      stopPreview();
+    }
+  }, [activeMobilePreviewId, item.id]);
+
+  const startPreview = () => {
+    if (isUnplayable) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    setIsPreviewing(true);
+    const src = item.mediaUrl;
+    const isHls = src.includes(".m3u8");
+
+    if (isHls) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = src;
+        video.currentTime = 0;
+        video
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => {});
+      } else if (Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+        hls.loadSource(src);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.currentTime = 0;
+          video
+            .play()
+            .then(() => setIsPlaying(true))
+            .catch(() => {});
+        });
+
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(src)}`;
+            if (hls.url !== proxyUrl) {
+              hls.loadSource(proxyUrl);
+              hls.startLoad();
+            }
+          }
+        });
+      }
+    } else {
+      if (!video.src || video.src === "") {
+        video.src = src;
+      }
+      video.currentTime = 0;
+      video
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {});
+    }
+  };
+
+  const stopPreview = () => {
+    setIsPreviewing(false);
+    setIsPlaying(false);
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.currentTime = 0;
+    }
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+  };
+
+  // Hover cho thiết bị Desktop có chuột
+  const handleMouseEnter = () => {
+    if (typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches) {
+      hoverTimerRef.current = setTimeout(() => {
+        startPreview();
+      }, 120);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches) {
+      stopPreview();
+    }
+  };
+
+  // Xử lý Click: Desktop mở ngay, Mobile lần 1 xem frame, lần 2 mở video
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const isTouchDevice =
+      typeof window !== "undefined" &&
+      window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+
+    if (isTouchDevice) {
+      // Thiết bị di động / cảm ứng
+      if (!isMobileActive && !isPreviewing) {
+        // Chạm lần 1: Kích hoạt xem trước frame video
+        onSetMobilePreview(item.id);
+        startPreview();
+      } else {
+        // Chạm lần 2: Nhảy tới xem video full trên feed
+        stopPreview();
+        onSetMobilePreview(null);
+        onJumpToVideo(item);
+      }
+    } else {
+      // Máy tính Desktop: Click là nhảy tới video
+      stopPreview();
+      onJumpToVideo(item);
+    }
+  };
+
+  return (
+    <div
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className="relative w-full h-full flex items-center justify-center bg-black cursor-pointer group/vid overflow-hidden select-none"
+      title="Hover để xem trước những frame đầu, bấm để nhảy tới video"
+    >
+      {/* Video Element để phát preview các frame đầu */}
+      <video
+        ref={videoRef}
+        muted
+        playsInline
+        loop
+        preload="none"
+        onTimeUpdate={() => {
+          // Lặp lại 4.5 giây đầu tiên làm đoạn teaser / preview
+          if (videoRef.current && videoRef.current.currentTime >= 4.5) {
+            videoRef.current.currentTime = 0;
+          }
+        }}
+        onError={(e) => {
+          const target = e.currentTarget;
+          if (!item.mediaUrl.includes(".m3u8") && !target.src.includes("/api/proxy")) {
+            target.src = `/api/proxy?url=${encodeURIComponent(item.mediaUrl)}`;
+            target.play().then(() => setIsPlaying(true)).catch(() => {});
+          }
+        }}
+        className={`w-full h-full object-contain pointer-events-none transition-opacity duration-200 ${
+          isPreviewing ? "opacity-100" : "opacity-0 absolute inset-0 pointer-events-none"
+        }`}
+        style={{ transform: `rotate(${item.defaultRotate}deg)` }}
+      />
+
+      {/* Poster / Thumbnail khi chưa preview */}
+      {(!isPreviewing || !isPlaying) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          {item.thumbnailUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.thumbnailUrl}
+              alt={item.title || "video poster"}
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              className="max-w-full max-h-full w-auto h-auto object-contain select-none pointer-events-none"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-neutral-950">
+              <Film className="w-8 h-8 text-neutral-600" />
+            </div>
+          )}
+
+          {/* Icon Play phủ mờ */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20 group-hover/vid:bg-black/10 transition-colors">
+            <div className="p-2 rounded-full bg-black/60 text-white backdrop-blur-xs border border-white/20 shadow-lg group-hover/vid:scale-110 transition-transform">
+              <Film className="w-4 h-4 text-amber-400" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Badge hướng dẫn khi đang phát preview */}
+      {isPreviewing && (
+        <div className="absolute top-2 right-2 z-20 pointer-events-none flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/90 text-white text-[10px] font-bold backdrop-blur-md shadow-lg animate-fade-in border border-blue-400/40">
+          <ExternalLink className="w-3 h-3 animate-pulse" />
+          <span className="hidden sm:inline">Click để mở video</span>
+          <span className="sm:hidden">Chạm lần 2 để mở</span>
+        </div>
+      )}
+
+      {/* Thanh tiến trình preview animated */}
+      {isPreviewing && isPlaying && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500/30 overflow-hidden pointer-events-none z-20">
+          <div className="h-full bg-blue-400 animate-pulse w-full origin-left" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AdminDashboardPage() {
@@ -167,6 +407,19 @@ export default function AdminDashboardPage() {
   const [isCleaningUnplayable, setIsCleaningUnplayable] = useState(false);
   const [isScanningUnplayable, setIsScanningUnplayable] = useState(false);
   const [isCleaningGalleries, setIsCleaningGalleries] = useState(false);
+  const [activeMobilePreviewId, setActiveMobilePreviewId] = useState<string | null>(null);
+
+  const handleJumpToVideo = (item: any) => {
+    window.open(`/?id=${item.id}`, "_blank");
+  };
+
+  useEffect(() => {
+    const handleDocClick = () => {
+      setActiveMobilePreviewId(null);
+    };
+    window.addEventListener("click", handleDocClick);
+    return () => window.removeEventListener("click", handleDocClick);
+  }, []);
 
   // Chọn & Thao tác hàng loạt (Bulk actions)
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -3121,40 +3374,25 @@ export default function AdminDashboardPage() {
                         </div>
 
                         {item.type === "VIDEO" ? (
-                          <div className="relative w-full h-full flex items-center justify-center bg-black">
-                            {item.thumbnailUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={item.thumbnailUrl}
-                                alt={item.title || "video poster"}
-                                referrerPolicy="no-referrer"
-                                loading="lazy"
-                                className="max-w-full max-h-full w-auto h-auto object-contain select-none pointer-events-none"
-                              />
-                            ) : (
-                              <video
-                                src={item.mediaUrl}
-                                preload="none"
-                                muted
-                                playsInline
-                                className="w-full h-full object-contain pointer-events-none"
-                                style={{ transform: `rotate(${item.defaultRotate}deg)` }}
-                              />
-                            )}
-                            {/* Overlay icon play video */}
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
-                              <div className="p-2 rounded-full bg-black/60 text-white backdrop-blur-xs border border-white/20 shadow">
-                                <Film className="w-4 h-4 text-amber-400" />
-                              </div>
-                            </div>
-                          </div>
+                          <AdminVideoPreview
+                            item={item}
+                            isUnplayable={isUnplayable}
+                            activeMobilePreviewId={activeMobilePreviewId}
+                            onSetMobilePreview={setActiveMobilePreviewId}
+                            onJumpToVideo={handleJumpToVideo}
+                          />
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={item.mediaUrl}
                             alt={item.title || "media"}
                             referrerPolicy="no-referrer"
-                            className="max-w-full max-h-full w-auto h-auto object-contain select-none"
+                            className="max-w-full max-h-full w-auto h-auto object-contain select-none cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleJumpToVideo(item);
+                            }}
+                            title="Bấm để mở xem trên feed"
                           />
                         )}
 

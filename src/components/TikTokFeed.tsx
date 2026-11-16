@@ -126,7 +126,8 @@ export default function TikTokFeed() {
       eDate = "",
       formats: MediaFormat[] = ["VIDEO", "GALLERY", "IMAGE"],
       cursor: string | null = null,
-      append = false
+      append = false,
+      targetId: string | null = null
     ) => {
       // Nếu đang lọc mục yêu thích mà danh sách rỗng
       if (favOnly && favList.length === 0) {
@@ -149,6 +150,7 @@ export default function TikTokFeed() {
           params.set("formats", formats.join(","));
         }
         if (cursor && cursor !== "random-infinite") params.set("cursor", cursor);
+        if (targetId && !append) params.set("id", targetId);
 
         const res = await fetch(`/api/feed?${params.toString()}`);
         if (!res.ok) throw new Error("Lỗi tải dữ liệu feed");
@@ -190,9 +192,26 @@ export default function TikTokFeed() {
     }
   };
 
-  // Tải lại khi thay đổi bộ lọc (LƯU Ý: Không đưa favorites vào dependency để khi thả tim bài viết trong danh sách tổng không bị load lại và mất bài đang xem)
+  // Tải lại khi thay đổi bộ lọc
   useEffect(() => {
-    loadMedia(activeTag, showFavoritesOnly, favorites, sortMode, startDate, endDate, selectedFormats);
+    let initialTargetId: string | null = null;
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      initialTargetId = sp.get("id") || sp.get("mediaId");
+    }
+
+    loadMedia(
+      activeTag,
+      showFavoritesOnly,
+      favorites,
+      sortMode,
+      startDate,
+      endDate,
+      selectedFormats,
+      null,
+      false,
+      initialTargetId
+    );
     loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTag, showFavoritesOnly, sortMode, startDate, endDate, selectedFormats, loadMedia]);
