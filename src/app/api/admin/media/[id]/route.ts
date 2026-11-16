@@ -55,12 +55,15 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { tags, isLandscape, defaultRotate, title } = body;
+    const { tags, isLandscape, defaultRotate, title, duration, width, height } = body;
 
     const updateData: any = {};
     if (typeof isLandscape === "boolean") updateData.isLandscape = isLandscape;
     if (typeof defaultRotate === "number") updateData.defaultRotate = defaultRotate;
     if (typeof title === "string") updateData.title = title;
+    if (duration !== undefined) updateData.duration = duration != null && !isNaN(Number(duration)) ? Number(duration) : null;
+    if (width !== undefined) updateData.width = width != null && !isNaN(Number(width)) ? Math.round(Number(width)) : null;
+    if (height !== undefined) updateData.height = height != null && !isNaN(Number(height)) ? Math.round(Number(height)) : null;
 
     await prisma.$transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {

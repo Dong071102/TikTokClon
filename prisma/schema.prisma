@@ -39,6 +39,9 @@ model MediaItem {
   title        String?
   isLandscape  Boolean        @default(false)
   defaultRotate Int           @default(0) // 0, 90, 180, 270 degrees
+  duration     Float?         // Thời lượng video tính theo giây (ví dụ: 84.5s)
+  width        Int?           // Chiều rộng pixel gốc
+  height       Int?           // Chiều cao pixel gốc
   galleryUrls  String[]       @default([]) // Danh sách URL ảnh cho Gallery / Album
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt

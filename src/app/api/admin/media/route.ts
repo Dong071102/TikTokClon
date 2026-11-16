@@ -220,6 +220,9 @@ async function createMediaRecord(data: any) {
     tags = [], // string[]
     isLandscape = false,
     defaultRotate = 0,
+    duration = null,
+    width = null,
+    height = null,
   } = data;
 
   const initialMediaUrl =
@@ -282,6 +285,9 @@ async function createMediaRecord(data: any) {
         title: title || null,
         isLandscape: Boolean(isLandscape),
         defaultRotate: Number(defaultRotate) || 0,
+        duration: duration != null && !isNaN(Number(duration)) ? Number(duration) : null,
+        width: width != null && !isNaN(Number(width)) ? Math.round(Number(width)) : null,
+        height: height != null && !isNaN(Number(height)) ? Math.round(Number(height)) : null,
       },
     });
 

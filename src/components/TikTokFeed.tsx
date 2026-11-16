@@ -36,6 +36,9 @@ interface MediaItem {
   title?: string;
   isLandscape?: boolean;
   defaultRotate?: number;
+  duration?: number | null;
+  width?: number | null;
+  height?: number | null;
   tags: string[];
   createdAt?: string;
   feedKey?: string; // Khóa duy nhất cho infinite loop
@@ -579,6 +582,9 @@ export default function TikTokFeed() {
                 isLandscape={item.isLandscape}
                 isFavorite={favorites.includes(item.id)}
                 onToggleFavorite={() => toggleFavorite(item.id)}
+                initialDuration={item.duration}
+                width={item.width}
+                height={item.height}
               />
             ) : item.galleryUrls && item.galleryUrls.length > 1 ? (
               <GalleryViewer

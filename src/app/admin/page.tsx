@@ -36,6 +36,7 @@ import {
   Clock,
 } from "lucide-react";
 import Link from "next/link";
+import { formatDuration, getQualityTag, formatResolutionText, formatFileSize } from "@/lib/mediaUtils";
 
 function renderAdminTextWithLinks(text?: string | null) {
   if (!text) return null;
@@ -78,6 +79,13 @@ export default function AdminDashboardPage() {
   const [isLandscape, setIsLandscape] = useState(false);
   const [isSubmittingLink, setIsSubmittingLink] = useState(false);
   const [linkMsg, setLinkMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  // Metadata & Xác thực cho Tab 1
+  const [linkDuration, setLinkDuration] = useState<number | null>(null);
+  const [linkWidth, setLinkWidth] = useState<number | null>(null);
+  const [linkHeight, setLinkHeight] = useState<number | null>(null);
+  const [linkPlayStatus, setLinkPlayStatus] = useState<"IDLE" | "CHECKING" | "PLAYABLE" | "PLAYABLE_PROXY" | "ERROR">("IDLE");
+  const [linkPlayError, setLinkPlayError] = useState<string | null>(null);
+  const [linkUsedProxy, setLinkUsedProxy] = useState(false);
 
   // States cho Tab Bóc tách Media Web (Nhiều trang, Ảnh & Video)
   const [webScrapeUrl, setWebScrapeUrl] = useState("");
@@ -87,6 +95,8 @@ export default function AdminDashboardPage() {
   const [maxDeepPerUrl, setMaxDeepPerUrl] = useState(20);
   const [crawlDelayMs, setCrawlDelayMs] = useState(1000); // Khoảng nghỉ giữa các đợt cào (ms) chống chặn
   const [crawlConcurrency, setCrawlConcurrency] = useState(2); // Số luồng cào đồng thời
+  // Metadata & Xác thực cho Tab 2 (Web Scrape)
+  const [mediaMetaMap, setMediaMetaMap] = useState<Record<string, { duration?: number; width?: number; height?: number; playable?: boolean; error?: boolean }>>({});
 
   // States cho công cụ tạo dải link phân trang tự động
   const [showPaginationBuilder, setShowPaginationBuilder] = useState(false);
@@ -129,6 +139,12 @@ export default function AdminDashboardPage() {
   const [uploadLandscape, setUploadLandscape] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  // Metadata & Xác thực cho Tab Upload
+  const [uploadDuration, setUploadDuration] = useState<number | null>(null);
+  const [uploadWidth, setUploadWidth] = useState<number | null>(null);
+  const [uploadHeight, setUploadHeight] = useState<number | null>(null);
+  const [uploadPlayStatus, setUploadPlayStatus] = useState<"IDLE" | "PLAYABLE" | "ERROR">("IDLE");
+  const [uploadFileSize, setUploadFileSize] = useState<number | null>(null);
 
   // States cho Tab 3: Danh sách Media
   const [mediaList, setMediaList] = useState<any[]>([]);
@@ -213,6 +229,12 @@ export default function AdminDashboardPage() {
       if (!res.ok) throw new Error(json.error || "Không thể bóc tách link");
 
       setParsedData(json.data);
+      setLinkDuration(null);
+      setLinkWidth(null);
+      setLinkHeight(null);
+      setLinkPlayStatus("CHECKING");
+      setLinkPlayError(null);
+      setLinkUsedProxy(false);
       if (json.data.isLandscape) setIsLandscape(true);
     } catch (err: any) {
       setLinkMsg({ type: "error", text: err.message });
@@ -224,6 +246,14 @@ export default function AdminDashboardPage() {
   // 1.1 Lưu link vào DB
   const handleSaveParsedMedia = async () => {
     if (!parsedData) return;
+
+    if (linkPlayStatus === "ERROR") {
+      const confirmSave = confirm(
+        "CẢNH BÁO: Media này hiện không thể phát/tải được trên trình duyệt (link hỏng hoặc codec không hỗ trợ). Bạn có chắc chắn vẫn muốn lưu vào hệ thống không?"
+      );
+      if (!confirmSave) return;
+    }
+
     setIsSubmittingLink(true);
     setLinkMsg(null);
 
@@ -247,6 +277,9 @@ export default function AdminDashboardPage() {
           tags,
           isLandscape,
           defaultRotate,
+          duration: linkDuration,
+          width: linkWidth,
+          height: linkHeight,
         }),
       });
 
@@ -256,6 +289,12 @@ export default function AdminDashboardPage() {
       setLinkMsg({ type: "success", text: "Đã thêm media thành công vào hệ thống!" });
       setInputUrl("");
       setParsedData(null);
+      setLinkDuration(null);
+      setLinkWidth(null);
+      setLinkHeight(null);
+      setLinkPlayStatus("IDLE");
+      setLinkPlayError(null);
+      setLinkUsedProxy(false);
       setTagsInput("");
       setDefaultRotate(0);
       setIsLandscape(false);
@@ -388,6 +427,32 @@ export default function AdminDashboardPage() {
     );
   };
 
+  const updateMediaMeta = useCallback(
+    (url: string, meta: { duration?: number; width?: number; height?: number; playable?: boolean; error?: boolean }) => {
+      setMediaMetaMap((prev) => ({
+        ...prev,
+        [url]: { ...prev[url], ...meta },
+      }));
+    },
+    []
+  );
+
+  const handleDeselectErrorVideos = () => {
+    setSelectedMediaUrls((prev) =>
+      prev.filter((url) => !mediaMetaMap[url]?.error)
+    );
+  };
+
+  const handleDeselectSmallImages = () => {
+    setSelectedMediaUrls((prev) =>
+      prev.filter((url) => {
+        const meta = mediaMetaMap[url];
+        if (!meta || !meta.width) return true;
+        return meta.width >= 400;
+      })
+    );
+  };
+
   const handleSelectAllMedia = () => {
     if (mediaTypeFilter === "ALL") {
       setSelectedMediaUrls(scrapedMediaItems.map((m) => m.url));
@@ -447,6 +512,8 @@ export default function AdminDashboardPage() {
         .filter(Boolean);
 
       const firstPageUrl = webScrapeUrl.split(/[\r\n,]+/)[0]?.trim() || null;
+      const firstImageMeta = selectedImages.length > 0 ? mediaMetaMap[selectedImages[0]] : null;
+      const isLandscape = firstImageMeta?.width && firstImageMeta?.height ? firstImageMeta.width > firstImageMeta.height : false;
 
       const res = await fetch("/api/admin/media", {
         method: "POST",
@@ -460,6 +527,9 @@ export default function AdminDashboardPage() {
           title: webGalleryTitle.trim() || scrapedWebTitle || null,
           storageMode: webStorageMode,
           tags,
+          width: firstImageMeta?.width || null,
+          height: firstImageMeta?.height || null,
+          isLandscape,
         }),
       });
 
@@ -499,16 +569,24 @@ export default function AdminDashboardPage() {
         .map((t) => t.trim().replace(/^#/, ""))
         .filter(Boolean);
 
-      const itemsToSave = selectedVideos.map((v) => ({
-        type: "VIDEO",
-        sourceType: "WEB_SCRAPE",
-        sourceUrl: v.sourceUrl,
-        mediaUrl: v.url,
-        thumbnailUrl: v.thumbnailUrl || null,
-        title: (selectedVideos.length > 1 ? v.pageTitle : webGalleryTitle.trim()) || v.pageTitle || webGalleryTitle.trim() || scrapedWebTitle || null,
-        storageMode: webStorageMode,
-        tags,
-      }));
+      const itemsToSave = selectedVideos.map((v) => {
+        const meta = mediaMetaMap[v.url];
+        const isLandscape = meta?.width && meta?.height ? meta.width > meta.height : false;
+        return {
+          type: "VIDEO",
+          sourceType: "WEB_SCRAPE",
+          sourceUrl: v.sourceUrl,
+          mediaUrl: v.url,
+          thumbnailUrl: v.thumbnailUrl || null,
+          title: (selectedVideos.length > 1 ? v.pageTitle : webGalleryTitle.trim()) || v.pageTitle || webGalleryTitle.trim() || scrapedWebTitle || null,
+          storageMode: webStorageMode,
+          tags,
+          duration: meta?.duration || null,
+          width: meta?.width || null,
+          height: meta?.height || null,
+          isLandscape,
+        };
+      });
 
       const res = await fetch("/api/admin/media", {
         method: "POST",
@@ -560,6 +638,8 @@ export default function AdminDashboardPage() {
 
       // 1. Nếu có ảnh: gom thành 1 bài Gallery
       if (selectedImages.length > 0) {
+        const firstImageMeta = mediaMetaMap[selectedImages[0]];
+        const isLandscape = firstImageMeta?.width && firstImageMeta?.height ? firstImageMeta.width > firstImageMeta.height : false;
         itemsToSave.push({
           type: "IMAGE",
           sourceType: "WEB_SCRAPE",
@@ -569,11 +649,16 @@ export default function AdminDashboardPage() {
           title: webGalleryTitle.trim() || scrapedWebTitle || null,
           storageMode: webStorageMode,
           tags,
+          width: firstImageMeta?.width || null,
+          height: firstImageMeta?.height || null,
+          isLandscape,
         });
       }
 
       // 2. Nếu có video: lưu từng video thành bài viết riêng
       for (const v of selectedVideos) {
+        const meta = mediaMetaMap[v.url];
+        const isLandscape = meta?.width && meta?.height ? meta.width > meta.height : false;
         itemsToSave.push({
           type: "VIDEO",
           sourceType: "WEB_SCRAPE",
@@ -583,6 +668,10 @@ export default function AdminDashboardPage() {
           title: webGalleryTitle.trim() || v.pageTitle || scrapedWebTitle || null,
           storageMode: webStorageMode,
           tags,
+          duration: meta?.duration || null,
+          width: meta?.width || null,
+          height: meta?.height || null,
+          isLandscape,
         });
       }
 
@@ -613,12 +702,58 @@ export default function AdminDashboardPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadFile(file);
-    setUploadPreview(URL.createObjectURL(file));
+    setUploadFileSize(file.size);
+    const previewUrl = URL.createObjectURL(file);
+    setUploadPreview(previewUrl);
+    setUploadPlayStatus("IDLE");
+    setUploadDuration(null);
+    setUploadWidth(null);
+    setUploadHeight(null);
+
+    if (file.type.startsWith("video/")) {
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.src = previewUrl;
+      v.onloadedmetadata = () => {
+        const dur = v.duration;
+        const w = v.videoWidth;
+        const h = v.videoHeight;
+        setUploadDuration(dur && !isNaN(dur) ? dur : null);
+        setUploadWidth(w || null);
+        setUploadHeight(h || null);
+        if (w && h && w > h) setUploadLandscape(true);
+        setUploadPlayStatus("PLAYABLE");
+      };
+      v.onerror = () => {
+        setUploadPlayStatus("ERROR");
+      };
+    } else if (file.type.startsWith("image/")) {
+      const img = new Image();
+      img.src = previewUrl;
+      img.onload = () => {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        setUploadWidth(w || null);
+        setUploadHeight(h || null);
+        if (w && h && w > h) setUploadLandscape(true);
+        setUploadPlayStatus("PLAYABLE");
+      };
+      img.onerror = () => {
+        setUploadPlayStatus("ERROR");
+      };
+    }
   };
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadFile) return;
+
+    if (uploadPlayStatus === "ERROR") {
+      const confirmSave = confirm(
+        "CẢNH BÁO: File này hiện không thể đọc hoặc phát được trên trình duyệt. Bạn có chắc chắn vẫn muốn tải lên không?"
+      );
+      if (!confirmSave) return;
+    }
 
     setIsUploading(true);
     setUploadMsg(null);
@@ -629,6 +764,9 @@ export default function AdminDashboardPage() {
       formData.append("tags", uploadTags);
       formData.append("isLandscape", String(uploadLandscape));
       formData.append("defaultRotate", String(uploadRotate));
+      if (uploadDuration != null) formData.append("duration", String(uploadDuration));
+      if (uploadWidth != null) formData.append("width", String(uploadWidth));
+      if (uploadHeight != null) formData.append("height", String(uploadHeight));
 
       const res = await fetch("/api/admin/upload", {
         method: "POST",
@@ -641,6 +779,11 @@ export default function AdminDashboardPage() {
       setUploadMsg({ type: "success", text: "Đã tải lên và lưu file thành công!" });
       setUploadFile(null);
       setUploadPreview(null);
+      setUploadFileSize(null);
+      setUploadDuration(null);
+      setUploadWidth(null);
+      setUploadHeight(null);
+      setUploadPlayStatus("IDLE");
       setUploadTags("");
       setUploadRotate(0);
       setUploadLandscape(false);
@@ -1145,32 +1288,142 @@ export default function AdminDashboardPage() {
                 <h3 className="font-bold text-base text-neutral-200">Xem trước & Thiết lập Media</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Khung Preview Media */}
-                  <div className="relative aspect-[9/16] max-h-[420px] bg-black rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center">
-                    {parsedData.type === "VIDEO" ? (
-                      <video
-                        src={parsedData.mediaUrl}
-                        controls
-                        playsInline
-                        className="w-full h-full object-contain"
-                        style={{ transform: `rotate(${defaultRotate}deg)` }}
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          if (!target.src.includes("/api/proxy")) {
-                            target.src = `/api/proxy?url=${encodeURIComponent(parsedData.mediaUrl)}`;
-                            target.load();
-                          }
-                        }}
-                      />
-                    ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={parsedData.mediaUrl}
-                        alt="Preview"
-                        referrerPolicy="no-referrer"
-                        className="max-w-full max-h-full w-auto h-auto object-contain select-none"
-                      />
-                    )}
+                  {/* Cột Trái: Khung Preview Media & Card Thông số Kỹ thuật */}
+                  <div className="flex flex-col gap-4">
+                    <div className="relative aspect-[9/16] max-h-[420px] bg-black rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center">
+                      {parsedData.type === "VIDEO" ? (
+                        <video
+                          src={linkUsedProxy ? `/api/proxy?url=${encodeURIComponent(parsedData.mediaUrl)}` : parsedData.mediaUrl}
+                          controls
+                          playsInline
+                          className="w-full h-full object-contain"
+                          style={{ transform: `rotate(${defaultRotate}deg)` }}
+                          onLoadedMetadata={(e) => {
+                            const target = e.currentTarget;
+                            const dur = target.duration;
+                            const w = target.videoWidth;
+                            const h = target.videoHeight;
+                            setLinkDuration(dur && !isNaN(dur) ? dur : null);
+                            setLinkWidth(w || null);
+                            setLinkHeight(h || null);
+                            if (w && h && w > h && !isLandscape) {
+                              setIsLandscape(true);
+                            }
+                          }}
+                          onCanPlay={() => {
+                            setLinkPlayStatus(linkUsedProxy ? "PLAYABLE_PROXY" : "PLAYABLE");
+                            setLinkPlayError(null);
+                          }}
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!linkUsedProxy && !target.src.includes("/api/proxy")) {
+                              setLinkUsedProxy(true);
+                              setLinkPlayStatus("CHECKING");
+                              target.src = `/api/proxy?url=${encodeURIComponent(parsedData.mediaUrl)}`;
+                              target.load();
+                            } else {
+                              setLinkPlayStatus("ERROR");
+                              setLinkPlayError("Không thể phát video (Link hỏng hoặc codec không hỗ trợ)");
+                            }
+                          }}
+                        />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={parsedData.mediaUrl}
+                          alt="Preview"
+                          referrerPolicy="no-referrer"
+                          className="max-w-full max-h-full w-auto h-auto object-contain select-none"
+                          onLoad={(e) => {
+                            const img = e.currentTarget;
+                            const w = img.naturalWidth;
+                            const h = img.naturalHeight;
+                            setLinkWidth(w || null);
+                            setLinkHeight(h || null);
+                            if (w && h && w > h && !isLandscape) {
+                              setIsLandscape(true);
+                            }
+                            setLinkPlayStatus("PLAYABLE");
+                          }}
+                          onError={() => {
+                            setLinkPlayStatus("ERROR");
+                            setLinkPlayError("Không thể tải ảnh (Link hỏng hoặc bị chặn)");
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Card Thông số Kỹ thuật & Xác thực Media */}
+                    <div className="p-3.5 bg-neutral-950/90 border border-neutral-800 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-amber-400" />
+                          <span>Thông số & Xác thực</span>
+                        </span>
+                        {linkPlayStatus === "PLAYABLE" && (
+                          <span className="px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/30 text-green-400 text-[11px] font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> {parsedData.type === "VIDEO" ? "Video phát tốt" : "Ảnh hợp lệ"}
+                          </span>
+                        )}
+                        {linkPlayStatus === "PLAYABLE_PROXY" && (
+                          <span className="px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[11px] font-bold flex items-center gap-1">
+                            <Globe className="w-3 h-3" /> Phát tốt (qua Proxy)
+                          </span>
+                        )}
+                        {linkPlayStatus === "CHECKING" && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[11px] font-bold flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Đang kiểm tra...
+                          </span>
+                        )}
+                        {linkPlayStatus === "ERROR" && (
+                          <span className="px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[11px] font-bold flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> {parsedData.type === "VIDEO" ? "Video không thể phát" : "Ảnh bị lỗi"}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {parsedData.type === "VIDEO" && (
+                          <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-purple-400 shrink-0" />
+                            <div>
+                              <div className="text-[10px] text-neutral-400">Thời lượng</div>
+                              <div className="font-bold text-neutral-200">
+                                {linkDuration ? `${formatDuration(linkDuration)} (${Math.round(linkDuration)}s)` : "Đang đo..."}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className={`p-2 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center gap-2 ${parsedData.type !== "VIDEO" ? "col-span-2" : ""}`}>
+                          <Film className="w-4 h-4 text-blue-400 shrink-0" />
+                          <div>
+                            <div className="text-[10px] text-neutral-400">Độ phân giải</div>
+                            <div className="font-bold text-neutral-200">
+                              {linkWidth && linkHeight ? (
+                                <>
+                                  {linkWidth} × {linkHeight}{" "}
+                                  <span className="text-[10px] text-blue-400 font-normal">
+                                    ({getQualityTag(linkWidth, linkHeight)})
+                                  </span>
+                                </>
+                              ) : (
+                                "Đang đo..."
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {linkPlayStatus === "ERROR" && (
+                        <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-500/40 text-[11px] text-red-300 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          <span>
+                            {linkPlayError || "Trình duyệt không thể giải mã video này hoặc link nguồn đã hết hạn/bị chặn."}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Form Cấu hình */}
@@ -1668,7 +1921,7 @@ export default function AdminDashboardPage() {
                     </div>
                   </div>
 
-                  {/* Nút thao tác chọn nhanh */}
+                  {/* Nút thao tác chọn nhanh & Lọc thông minh */}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -1702,6 +1955,24 @@ export default function AdminDashboardPage() {
                         Chỉ chọn Video ({totalVideos})
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={handleDeselectErrorVideos}
+                      title="Bỏ chọn các video bị lỗi không thể phát"
+                      className="px-3 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-500/40 text-xs text-red-300 font-medium transition active:scale-95 flex items-center gap-1.5"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                      <span>Bỏ chọn video lỗi</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectSmallImages}
+                      title="Bỏ chọn các ảnh có kích thước nhỏ hơn 400px (ảnh thumbnail / icon)"
+                      className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-amber-300 hover:text-amber-200 font-medium transition active:scale-95 flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Bỏ chọn ảnh nhỏ (&lt;400px)</span>
+                    </button>
                   </div>
 
                   {/* Grid hiển thị các media items */}
@@ -1731,33 +2002,81 @@ export default function AdminDashboardPage() {
                                   className="w-full h-full object-cover select-none pointer-events-none"
                                   loading="lazy"
                                 />
-                              ) : (
-                                <video
-                                  src={item.url}
-                                  muted
-                                  preload="metadata"
-                                  className="w-full h-full object-cover select-none pointer-events-none"
-                                />
-                              )}
+                              ) : null}
+                              <video
+                                src={item.url}
+                                muted
+                                preload="metadata"
+                                className={`w-full h-full object-cover select-none pointer-events-none ${item.thumbnailUrl ? "hidden" : ""}`}
+                                onLoadedMetadata={(e) => {
+                                  const v = e.currentTarget;
+                                  const dur = v.duration;
+                                  const w = v.videoWidth;
+                                  const h = v.videoHeight;
+                                  updateMediaMeta(item.url, {
+                                    duration: dur && !isNaN(dur) ? dur : undefined,
+                                    width: w || undefined,
+                                    height: h || undefined,
+                                    playable: true,
+                                    error: false,
+                                  });
+                                }}
+                                onError={() => {
+                                  updateMediaMeta(item.url, { playable: false, error: true });
+                                }}
+                              />
                               {/* Overlay Play Icon */}
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/30">
                                 <div className="p-2 rounded-full bg-black/60 text-white backdrop-blur-sm border border-white/20">
                                   <Film className="w-5 h-5 text-amber-400" />
                                 </div>
                               </div>
-                              <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-purple-900/80 border border-purple-500/40 text-[10px] font-bold text-purple-200">
-                                VIDEO
+                              <div className="absolute bottom-2 left-2 flex gap-1 z-10 flex-wrap">
+                                <span className="px-1.5 py-0.5 rounded bg-purple-900/80 border border-purple-500/40 text-[10px] font-bold text-purple-200">
+                                  VIDEO
+                                </span>
+                                {mediaMetaMap[item.url]?.duration ? (
+                                  <span className="px-1.5 py-0.5 rounded bg-black/80 border border-white/20 text-[10px] font-bold text-amber-300">
+                                    ⏱️ {formatDuration(mediaMetaMap[item.url]?.duration)}
+                                  </span>
+                                ) : null}
+                                {mediaMetaMap[item.url]?.error && (
+                                  <span className="px-1.5 py-0.5 rounded bg-red-900/90 border border-red-500/50 text-[10px] font-bold text-red-200">
+                                    ⚠️ Lỗi phát
+                                  </span>
+                                )}
                               </div>
                             </div>
                           ) : (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={item.url}
-                              alt={`Scraped ${idx + 1}`}
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover select-none pointer-events-none"
-                              loading="lazy"
-                            />
+                            <div className="relative w-full h-full flex items-center justify-center bg-black">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.url}
+                                alt={`Scraped ${idx + 1}`}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover select-none pointer-events-none"
+                                loading="lazy"
+                                onLoad={(e) => {
+                                  const img = e.currentTarget;
+                                  const w = img.naturalWidth;
+                                  const h = img.naturalHeight;
+                                  updateMediaMeta(item.url, {
+                                    width: w || undefined,
+                                    height: h || undefined,
+                                    playable: true,
+                                    error: false,
+                                  });
+                                }}
+                                onError={() => {
+                                  updateMediaMeta(item.url, { playable: false, error: true });
+                                }}
+                              />
+                              {mediaMetaMap[item.url]?.width && mediaMetaMap[item.url]?.height ? (
+                                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/80 border border-white/20 text-[9px] font-semibold text-neutral-300 pointer-events-none">
+                                  {mediaMetaMap[item.url].width}×{mediaMetaMap[item.url].height}
+                                </div>
+                              ) : null}
+                            </div>
                           )}
 
                           {/* Checkbox badge ở góc trên phải */}
@@ -1955,19 +2274,62 @@ export default function AdminDashboardPage() {
               </div>
 
               {uploadPreview && (
-                <div className="flex flex-col sm:flex-row gap-6 items-center">
-                  <div className="relative aspect-[9/16] w-48 bg-black rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center">
-                    {uploadFile?.type.startsWith("video/") ? (
-                      <video
-                        src={uploadPreview}
-                        controls
-                        className="w-full h-full object-contain"
-                        style={{ transform: `rotate(${uploadRotate}deg)` }}
-                      />
-                    ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={uploadPreview} alt="Preview" className="w-full h-full object-contain" />
-                    )}
+                <div className="flex flex-col sm:flex-row gap-6 items-start">
+                  <div className="flex flex-col gap-3 w-full sm:w-56 shrink-0">
+                    <div className="relative aspect-[9/16] w-full bg-black rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center">
+                      {uploadFile?.type.startsWith("video/") ? (
+                        <video
+                          src={uploadPreview}
+                          controls
+                          className="w-full h-full object-contain"
+                          style={{ transform: `rotate(${uploadRotate}deg)` }}
+                        />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={uploadPreview} alt="Preview" className="w-full h-full object-contain" />
+                      )}
+                    </div>
+
+                    {/* Card Thông số file tải lên */}
+                    <div className="p-3 bg-neutral-950/90 border border-neutral-800 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between text-neutral-300 font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Thông số</span>
+                        </span>
+                        {uploadPlayStatus === "PLAYABLE" ? (
+                          <span className="px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/30 text-green-400 text-[10px] font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Hợp lệ
+                          </span>
+                        ) : uploadPlayStatus === "ERROR" ? (
+                          <span className="px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-bold flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> Lỗi file
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1.5 text-neutral-300">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-neutral-500">Dung lượng:</span>
+                          <span className="font-semibold text-neutral-200">{formatFileSize(uploadFileSize)}</span>
+                        </div>
+                        {uploadDuration ? (
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-neutral-500">Thời lượng:</span>
+                            <span className="font-semibold text-neutral-200">
+                              {formatDuration(uploadDuration)} ({Math.round(uploadDuration)}s)
+                            </span>
+                          </div>
+                        ) : null}
+                        {uploadWidth && uploadHeight ? (
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-neutral-500">Độ phân giải:</span>
+                            <span className="font-semibold text-neutral-200">
+                              {uploadWidth}×{uploadHeight} ({getQualityTag(uploadWidth, uploadHeight)})
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex-1 w-full space-y-4">
@@ -2376,6 +2738,20 @@ export default function AdminDashboardPage() {
                           >
                             {item.storageMode === "LOCAL_STORAGE" ? "LOCAL" : "DIRECT"}
                           </span>
+                        </div>
+
+                        {/* Badges thời lượng video & độ phân giải */}
+                        <div className="absolute bottom-2 left-2 flex gap-1 z-10 flex-wrap pointer-events-none">
+                          {item.type === "VIDEO" && item.duration ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-black/80 text-amber-300 backdrop-blur-md border border-white/20 shadow">
+                              ⏱️ {formatDuration(item.duration)}
+                            </span>
+                          ) : null}
+                          {item.width && item.height ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-black/80 text-neutral-300 backdrop-blur-md border border-white/20 shadow">
+                              {item.width}×{item.height} ({getQualityTag(item.width, item.height)})
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 

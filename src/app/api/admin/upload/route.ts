@@ -16,6 +16,12 @@ export async function POST(request: Request) {
     const title = (formData.get("title") as string) || "";
     const isLandscape = formData.get("isLandscape") === "true";
     const defaultRotate = parseInt((formData.get("defaultRotate") as string) || "0", 10);
+    const rawDuration = formData.get("duration") as string | null;
+    const rawWidth = formData.get("width") as string | null;
+    const rawHeight = formData.get("height") as string | null;
+    const duration = rawDuration ? parseFloat(rawDuration) : null;
+    const width = rawWidth ? parseInt(rawWidth, 10) : null;
+    const height = rawHeight ? parseInt(rawHeight, 10) : null;
 
     if (!file) {
       return NextResponse.json({ error: "Vui lòng chọn file tải lên" }, { status: 400 });
@@ -49,6 +55,9 @@ export async function POST(request: Request) {
           title: title || file.name,
           isLandscape,
           defaultRotate,
+          duration: duration && !isNaN(duration) ? duration : null,
+          width: width && !isNaN(width) ? Math.round(width) : null,
+          height: height && !isNaN(height) ? Math.round(height) : null,
         },
       });
 

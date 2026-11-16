@@ -12,6 +12,9 @@ interface VideoPlayerProps {
   isLandscape?: boolean;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  initialDuration?: number | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 // Hàm format thời gian định dạng phút:giây (vd: 0:15, 1:24)
@@ -30,6 +33,9 @@ export default function VideoPlayer({
   defaultRotate = 0,
   isFavorite = false,
   onToggleFavorite,
+  initialDuration,
+  width,
+  height,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -55,7 +61,13 @@ export default function VideoPlayer({
 
   // Trạng thái cho thanh tiến trình (Progress Bar & Scrubbing)
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(0);
+  const [duration, setDuration] = useState<number>(initialDuration && initialDuration > 0 ? initialDuration : 0);
+
+  useEffect(() => {
+    if (initialDuration && initialDuration > 0 && duration === 0) {
+      setDuration(initialDuration);
+    }
+  }, [initialDuration, duration]);
   const [bufferedPercent, setBufferedPercent] = useState<number>(0);
   const [isScrubbing, setIsScrubbing] = useState<boolean>(false);
   const [pendingSeekTime, setPendingSeekTime] = useState<number | null>(null);
