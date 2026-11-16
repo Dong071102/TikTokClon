@@ -4,44 +4,110 @@ import { prisma } from "@/lib/prisma";
 import fs from "fs";
 import sharp from "sharp";
 
-const imageDimensionCache = new Map<string, { width: number; height: number; error?: boolean } | null>();
+// Cache kích thước ảnh trong bộ nhớ để không bao giờ probe lại 1 URL 2 lần
+const imageDimensionCache = new Map<string, { width: number; height: number; error?: boolean }>();
 
-async function probeImageSize(urlOrPath: string): Promise<{ width: number; height: number; error?: boolean } | null> {
+// Hàm chạy song song với giới hạn concurrency (pool worker)
+async function pMap<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let index = 0;
+  const workers = new Array(Math.min(limit, Math.max(1, items.length))).fill(0).map(async () => {
+    while (index < items.length) {
+      const i = index++;
+      try {
+        results[i] = await fn(items[i], i);
+      } catch {
+        // Bỏ qua lỗi lẻ trong worker
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+// Hàm probe kích thước ảnh siêu tốc: chỉ tải 48KB phần đầu (Range header) thay vì tải toàn bộ file nhiều MB
+async function probeImageSize(urlOrPath: string): Promise<{ width: number; height: number; error?: boolean }> {
   const cached = imageDimensionCache.get(urlOrPath);
   if (cached !== undefined) return cached;
 
   try {
     if (urlOrPath.startsWith("http")) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-
       let origin = "";
       try {
         origin = new URL(urlOrPath).origin;
       } catch {}
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000); // 4s timeout
+
+      // Yêu cầu Range 0-49151 (48KB) để chỉ lấy header metadata (JPEG, PNG, WebP, GIF, AVIF)
       const res = await fetch(urlOrPath, {
         signal: controller.signal,
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Range: "bytes=0-49151",
           ...(origin ? { Referer: origin + "/" } : {}),
         },
       });
-      clearTimeout(timeout);
 
-      if (!res.ok) {
+      if (!res.ok && res.status !== 206) {
+        clearTimeout(timeout);
         const result = { width: 0, height: 0, error: true };
         imageDimensionCache.set(urlOrPath, result);
         return result;
       }
 
-      const arrayBuffer = await res.arrayBuffer();
-      const metadata = await sharp(Buffer.from(arrayBuffer)).metadata();
+      // Đọc tối đa 64KB từ stream rồi hủy stream ngay lập tức để tiết kiệm 98% băng thông
+      const reader = res.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+
+      if (reader) {
+        while (totalBytes < 65536) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            totalBytes += value.length;
+          }
+        }
+        try {
+          reader.cancel();
+        } catch {}
+      }
+      clearTimeout(timeout);
+      controller.abort();
+
+      const buffer = Buffer.concat(chunks);
+      let metadata;
+      try {
+        metadata = await sharp(buffer).metadata();
+      } catch {
+        // Fallback tải đầy đủ nếu 48KB chưa đủ đọc metadata (rất hiếm gặp)
+        try {
+          const fullCtrl = new AbortController();
+          const fullTo = setTimeout(() => fullCtrl.abort(), 5000);
+          const fullRes = await fetch(urlOrPath, {
+            signal: fullCtrl.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              ...(origin ? { Referer: origin + "/" } : {}),
+            },
+          });
+          clearTimeout(fullTo);
+          if (fullRes.ok) {
+            const fullBuf = Buffer.from(await fullRes.arrayBuffer());
+            metadata = await sharp(fullBuf).metadata();
+          }
+        } catch {}
+      }
+
       const result = {
-        width: metadata.width || 0,
-        height: metadata.height || 0,
-        error: false,
+        width: metadata?.width || 0,
+        height: metadata?.height || 0,
+        error: !metadata?.width || !metadata?.height,
       };
       imageDimensionCache.set(urlOrPath, result);
       return result;
@@ -61,11 +127,129 @@ async function probeImageSize(urlOrPath: string): Promise<{ width: number; heigh
     return result;
   }
 
-  return null;
+  return { width: 0, height: 0, error: true };
 }
 
-// Hàm quét và lọc sạch các ảnh nhỏ / ảnh hỏng bên trong galleryUrls của từng Album
+// Kiểm tra video có thể phát hay không siêu tốc bằng Range GET 0-100 song song
+async function checkVideoPlayable(v: {
+  id: string;
+  title: string | null;
+  mediaUrl: string;
+  storageMode: string;
+  localPath: string | null;
+}): Promise<{ unplayable: boolean; reason?: string }> {
+  // 1. File cục bộ trên máy chủ
+  if (v.storageMode === "LOCAL_STORAGE" && v.localPath) {
+    if (!fs.existsSync(v.localPath)) {
+      return { unplayable: true, reason: "File cục bộ trên máy chủ không tồn tại" };
+    }
+    return { unplayable: false };
+  }
+
+  // 2. Direct HTTP link
+  if (v.mediaUrl.startsWith("http")) {
+    let origin = "";
+    let domain = "";
+    try {
+      const u = new URL(v.mediaUrl);
+      origin = u.origin;
+      domain = u.hostname;
+    } catch {}
+
+    const isM3u8 = v.mediaUrl.includes(".m3u8");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      // Dùng GET Range bytes 0-100 trực tiếp (chuẩn video streaming)
+      const res = await fetch(v.mediaUrl, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          ...(origin ? { Referer: origin + "/" } : {}),
+          ...(isM3u8 ? {} : { Range: "bytes=0-100" }),
+        },
+      });
+      clearTimeout(timeout);
+
+      // Status 200 hoặc 206 -> Video chạy tốt
+      if (res.ok || res.status === 206) {
+        return { unplayable: false };
+      }
+
+      // Nếu 403 Forbidden -> Thử thêm referer từ domain
+      if (res.status === 403) {
+        try {
+          const ctrl2 = new AbortController();
+          const to2 = setTimeout(() => ctrl2.abort(), 3000);
+          const res2 = await fetch(v.mediaUrl, {
+            method: "GET",
+            signal: ctrl2.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              Referer: `https://${domain}/`,
+              Range: "bytes=0-50",
+            },
+          });
+          clearTimeout(to2);
+          if (res2.ok || res2.status === 206) {
+            return { unplayable: false };
+          }
+        } catch {}
+
+        return {
+          unplayable: true,
+          reason: "Server nguồn từ chối truy cập (HTTP 403 Forbidden)",
+        };
+      }
+
+      if (res.status === 404 || res.status === 410) {
+        return {
+          unplayable: true,
+          reason: `Link video đã chết (HTTP ${res.status})`,
+        };
+      }
+
+      if (res.status >= 500) {
+        return {
+          unplayable: true,
+          reason: `Máy chủ chứa video gặp lỗi (HTTP ${res.status})`,
+        };
+      }
+
+      if (res.status >= 400) {
+        return {
+          unplayable: true,
+          reason: `Lỗi kết nối HTTP ${res.status}`,
+        };
+      }
+
+      return { unplayable: false };
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === "AbortError") {
+        return {
+          unplayable: true,
+          reason: "Máy chủ video không phản hồi (Timeout > 4s)",
+        };
+      }
+      return {
+        unplayable: true,
+        reason: err.message || "Không thể kết nối đến URL video (Host chết hoặc DNS lỗi)",
+      };
+    }
+  }
+
+  return { unplayable: false };
+}
+
+// Hàm quét và lọc sạch các ảnh nhỏ / ảnh hỏng bên trong galleryUrls của từng Album (chạy song song 25 luồng)
 async function processGalleriesSmallImages(minSize: number, dryRun: boolean) {
+  const startTime = Date.now();
+
   const galleries = await prisma.mediaItem.findMany({
     where: {
       type: "IMAGE",
@@ -81,6 +265,22 @@ async function processGalleriesSmallImages(minSize: number, dryRun: boolean) {
     },
   });
 
+  // 1. Gom toàn bộ danh sách unique URL cần kiểm tra
+  const allUrlsSet = new Set<string>();
+  for (const g of galleries) {
+    if (Array.isArray(g.galleryUrls)) {
+      for (const u of g.galleryUrls) {
+        if (u) allUrlsSet.add(u);
+      }
+    }
+  }
+  const allUniqueUrls = Array.from(allUrlsSet);
+
+  // 2. Chạy quét song song 25 luồng với Range request (chỉ tải 48KB header mỗi ảnh)
+  await pMap(allUniqueUrls, 25, async (url) => {
+    await probeImageSize(url);
+  });
+
   let totalSmallImagesRemoved = 0;
   let galleriesUpdatedCount = 0;
   let galleriesDeletedCount = 0;
@@ -93,6 +293,7 @@ async function processGalleriesSmallImages(minSize: number, dryRun: boolean) {
     isDeleted: boolean;
   }> = [];
 
+  // 3. Phân loại và cập nhật từng Album
   for (const gallery of galleries) {
     const originalUrls = gallery.galleryUrls;
     if (!originalUrls || originalUrls.length === 0) continue;
@@ -103,7 +304,7 @@ async function processGalleriesSmallImages(minSize: number, dryRun: boolean) {
     let newFirstHeight: number | null = null;
 
     for (const url of originalUrls) {
-      const dim = await probeImageSize(url);
+      const dim = imageDimensionCache.get(url) || (await probeImageSize(url));
       if (dim && (dim.error || dim.width < minSize || dim.height < minSize)) {
         removedUrls.push(url);
       } else {
@@ -148,12 +349,16 @@ async function processGalleriesSmallImages(minSize: number, dryRun: boolean) {
     }
   }
 
+  const durationMs = Date.now() - startTime;
+
   return {
     totalGalleriesScanned: galleries.length,
+    totalImagesChecked: allUniqueUrls.length,
     totalSmallImagesRemoved,
     galleriesUpdatedCount,
     galleriesDeletedCount,
     affectedGalleries,
+    durationMs,
   };
 }
 
@@ -213,9 +418,36 @@ export async function POST(request: Request) {
     // 1. Xóa tất cả ảnh có kích thước nhỏ hơn ngưỡng (threshold) bao gồm cả ảnh đơn và ảnh trong Album/Gallery
     if (action === "DELETE_SMALL_IMAGES") {
       const minSize = Math.max(100, Math.min(2000, Number(threshold) || 400));
+      const startTime = Date.now();
+
+      // 1.1 Tự động quét và cập nhật kích thước cho các ảnh đơn chưa có width/height trong DB
+      const unprobedImages = await prisma.mediaItem.findMany({
+        where: {
+          type: "IMAGE",
+          galleryUrls: { isEmpty: true },
+          width: null,
+        },
+        select: { id: true, mediaUrl: true },
+        take: 100,
+      });
+
+      if (unprobedImages.length > 0) {
+        await pMap(unprobedImages, 15, async (item) => {
+          const dim = await probeImageSize(item.mediaUrl);
+          if (dim && !dim.error && dim.width > 0) {
+            await prisma.mediaItem.update({
+              where: { id: item.id },
+              data: { width: dim.width, height: dim.height },
+            });
+          }
+        });
+      }
+
+      // 1.2 Tìm các bài ảnh đơn nhỏ hơn ngưỡng
       const smallItems = await prisma.mediaItem.findMany({
         where: {
           type: "IMAGE",
+          galleryUrls: { isEmpty: true },
           OR: [
             { width: { lt: minSize, not: null } },
             { height: { lt: minSize, not: null } },
@@ -235,7 +467,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // Xóa các bản ghi ảnh đơn / bài nhỏ khỏi Database
+      // Xóa các bản ghi ảnh đơn nhỏ khỏi Database
       let deletedSingleCount = 0;
       if (smallItems.length > 0) {
         const deleteResult = await prisma.mediaItem.deleteMany({
@@ -246,12 +478,13 @@ export async function POST(request: Request) {
         deletedSingleCount = deleteResult.count;
       }
 
-      // Lọc sạch toàn bộ ảnh nhỏ nằm bên trong mảng galleryUrls của các bài Album/Gallery
+      // 1.3 Lọc sạch toàn bộ ảnh nhỏ nằm bên trong mảng galleryUrls của các bài Album/Gallery (chạy song song siêu tốc)
       const galleryResult = await processGalleriesSmallImages(minSize, false);
+      const totalDuration = Date.now() - startTime;
 
       const messageParts = [];
       if (deletedSingleCount > 0) {
-        messageParts.push(`Đã xóa ${deletedSingleCount} bài đăng ảnh có kích thước nhỏ`);
+        messageParts.push(`Đã xóa ${deletedSingleCount} bài ảnh đơn`);
       }
       if (galleryResult.totalSmallImagesRemoved > 0) {
         messageParts.push(
@@ -263,14 +496,15 @@ export async function POST(request: Request) {
 
       const finalMessage =
         messageParts.length > 0
-          ? messageParts.join(", và ") + ` (< ${minSize}px)!`
-          : `Không phát hiện hình ảnh nào nhỏ hơn ${minSize}px cần dọn dẹp.`;
+          ? messageParts.join(", và ") + ` (< ${minSize}px) trong ${(totalDuration / 1000).toFixed(1)}s!`
+          : `Không phát hiện hình ảnh nào nhỏ hơn ${minSize}px cần dọn dẹp (quét xong trong ${(totalDuration / 1000).toFixed(1)}s).`;
 
       return NextResponse.json({
         success: true,
         count: deletedSingleCount + galleryResult.totalSmallImagesRemoved,
         deletedSingleCount,
         galleryResult,
+        durationMs: totalDuration,
         message: finalMessage,
       });
     }
@@ -287,10 +521,10 @@ export async function POST(request: Request) {
         threshold: minSize,
         ...galleryResult,
         message: isDryRun
-          ? `Quét xong ${galleryResult.totalGalleriesScanned} album: Phát hiện ${galleryResult.totalSmallImagesRemoved} ảnh nhỏ/lỗi trong ${galleryResult.affectedGalleries.length} album.`
+          ? `Quét xong ${galleryResult.totalGalleriesScanned} album (${galleryResult.totalImagesChecked} ảnh) trong ${(galleryResult.durationMs / 1000).toFixed(1)}s: Phát hiện ${galleryResult.totalSmallImagesRemoved} ảnh nhỏ/lỗi trong ${galleryResult.affectedGalleries.length} album.`
           : `Đã loại bỏ ${galleryResult.totalSmallImagesRemoved} ảnh nhỏ trong ${galleryResult.galleriesUpdatedCount} album${
               galleryResult.galleriesDeletedCount > 0 ? ` (đã xóa ${galleryResult.galleriesDeletedCount} album rỗng)` : ""
-            }!`,
+            } chỉ trong ${(galleryResult.durationMs / 1000).toFixed(1)}s!`,
       });
     }
 
@@ -326,9 +560,10 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Quét kiểm tra trạng thái HTTP của các link video (Phát hiện video chết / 404 / hết hạn)
+    // 3. Quét kiểm tra trạng thái HTTP của các link video (Phát hiện video chết / 404 / hết hạn) song song 25 luồng
     if (action === "SCAN_UNPLAYABLE_VIDEOS") {
-      const limit = Math.min(200, Math.max(10, Number(body.limit) || 100));
+      const startTime = Date.now();
+      const limit = Math.min(1000, Math.max(10, Number(body.limit) || 300));
       const videos = await prisma.mediaItem.findMany({
         where: { type: "VIDEO" },
         take: limit,
@@ -338,101 +573,27 @@ export async function POST(request: Request) {
 
       const unplayable: Array<{ id: string; title: string | null; mediaUrl: string; reason: string }> = [];
 
-      for (const v of videos) {
-        // Nếu là local file: kiểm tra file có tồn tại trên đĩa không
-        if (v.storageMode === "LOCAL_STORAGE" && v.localPath) {
-          if (!fs.existsSync(v.localPath)) {
-            unplayable.push({
-              id: v.id,
-              title: v.title,
-              mediaUrl: v.mediaUrl,
-              reason: "File cục bộ trên máy chủ không tồn tại",
-            });
-          }
-          continue;
+      // Chạy kiểm tra video song song 25 luồng đồng thời
+      await pMap(videos, 25, async (v) => {
+        const check = await checkVideoPlayable(v);
+        if (check.unplayable) {
+          unplayable.push({
+            id: v.id,
+            title: v.title,
+            mediaUrl: v.mediaUrl,
+            reason: check.reason || "Không thể phát video",
+          });
         }
+      });
 
-        // Nếu là direct link: thử ping HEAD / GET range
-        if (v.mediaUrl.startsWith("http")) {
-          try {
-            let origin = "";
-            try {
-              origin = new URL(v.mediaUrl).origin;
-            } catch {}
-
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 4000);
-
-            const isM3u8 = v.mediaUrl.includes(".m3u8");
-            const res = await fetch(v.mediaUrl, {
-              method: isM3u8 ? "GET" : "HEAD",
-              signal: controller.signal,
-              headers: {
-                "User-Agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                ...(origin ? { Referer: origin + "/" } : {}),
-                ...(isM3u8 ? {} : { Range: "bytes=0-100" }),
-              },
-            });
-            clearTimeout(timeout);
-
-            let finalStatus = res.status;
-            // Nếu HEAD trả về 403 hoặc 405 (nhiều CDN chặn HEAD), thử lại bằng GET với Range và Referer
-            if (!isM3u8 && (res.status === 403 || res.status === 405)) {
-              try {
-                const ctrl2 = new AbortController();
-                const to2 = setTimeout(() => ctrl2.abort(), 4000);
-                const res2 = await fetch(v.mediaUrl, {
-                  method: "GET",
-                  signal: ctrl2.signal,
-                  headers: {
-                    "User-Agent":
-                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    Range: "bytes=0-100",
-                    ...(origin ? { Referer: origin + "/" } : {}),
-                  },
-                });
-                clearTimeout(to2);
-                finalStatus = res2.status;
-              } catch {}
-            }
-
-            if (finalStatus >= 400 && finalStatus !== 403) {
-              unplayable.push({
-                id: v.id,
-                title: v.title,
-                mediaUrl: v.mediaUrl,
-                reason: `Server nguồn trả về mã lỗi HTTP ${finalStatus}`,
-              });
-            } else if (finalStatus === 403) {
-              unplayable.push({
-                id: v.id,
-                title: v.title,
-                mediaUrl: v.mediaUrl,
-                reason: "Server nguồn từ chối truy cập (HTTP 403 Forbidden)",
-              });
-            }
-          } catch (err: any) {
-            // Nếu fetch timeout hoặc network error hoàn toàn
-            if (err.name === "AbortError") {
-              // Timeout - có thể do server chậm, không vội đánh dấu hỏng
-            } else {
-              unplayable.push({
-                id: v.id,
-                title: v.title,
-                mediaUrl: v.mediaUrl,
-                reason: err.message || "Không thể kết nối đến URL video",
-              });
-            }
-          }
-        }
-      }
+      const durationMs = Date.now() - startTime;
 
       return NextResponse.json({
         success: true,
         scannedCount: videos.length,
         unplayableCount: unplayable.length,
         unplayableItems: unplayable,
+        durationMs,
       });
     }
 

@@ -407,6 +407,7 @@ export default function AdminDashboardPage() {
   const [isCleaningUnplayable, setIsCleaningUnplayable] = useState(false);
   const [isScanningUnplayable, setIsScanningUnplayable] = useState(false);
   const [isCleaningGalleries, setIsCleaningGalleries] = useState(false);
+  const [isScanningGalleries, setIsScanningGalleries] = useState(false);
   const [activeMobilePreviewId, setActiveMobilePreviewId] = useState<string | null>(null);
 
   const handleJumpToVideo = (item: any) => {
@@ -1276,11 +1277,35 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Quét và lọc sạch ảnh nhỏ (<400px) hoặc ảnh lỗi tải bên trong tất cả các bài Album (Gallery)
+  // Quét xem trước ảnh nhỏ (<400px) hoặc ảnh hỏng trong Album mà không xóa
+  const handleScanGallerySmallImages = async () => {
+    setIsScanningGalleries(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SCAN_GALLERY_SMALL_IMAGES", threshold: 400 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi quét ảnh nhỏ Album");
+
+      setBulkActionMsg({
+        type: "success",
+        text: data.message || `Quét xong: ${data.totalSmallImagesRemoved} ảnh nhỏ trong ${data.affectedGalleries?.length || 0} album.`,
+      });
+    } catch (err: any) {
+      setBulkActionMsg({ type: "error", text: err.message || "Lỗi quét ảnh nhỏ Album" });
+    } finally {
+      setIsScanningGalleries(false);
+    }
+  };
+
+  // Quét và lọc sạch ảnh nhỏ (<400px) hoặc ảnh lỗi tải bên trong tất cả các bài Album (Gallery) - Chạy song song 25 luồng siêu tốc
   const handleCleanGallerySmallImages = async () => {
     if (
       !confirm(
-        "Hệ thống sẽ quét toàn bộ các Album (Gallery), kiểm tra kích thước từng ảnh và tự động loại bỏ các ảnh nhỏ hơn 400px hoặc ảnh hỏng ra khỏi Album (hoặc xóa Album nếu không còn ảnh nào). Tiếp tục?"
+        "Hệ thống sẽ quét toàn bộ các Album (Gallery) bằng 25 luồng song song, kiểm tra kích thước từng ảnh và tự động loại bỏ các ảnh nhỏ hơn 400px hoặc ảnh hỏng ra khỏi Album (hoặc xóa Album nếu không còn ảnh nào). Tiếp tục?"
       )
     ) {
       return;
@@ -1309,7 +1334,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Quét kiểm tra trạng thái HTTP của các video trên máy chủ
+  // Quét kiểm tra trạng thái HTTP của các video trên máy chủ (chạy song song 25 luồng Range GET)
   const handleScanUnplayableVideos = async () => {
     setIsScanningUnplayable(true);
     setBulkActionMsg(null);
@@ -1317,7 +1342,7 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/media/cleanup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "SCAN_UNPLAYABLE_VIDEOS", limit: 200 }),
+        body: JSON.stringify({ action: "SCAN_UNPLAYABLE_VIDEOS", limit: 300 }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Lỗi quét video");
@@ -1325,15 +1350,16 @@ export default function AdminDashboardPage() {
       const deadIds = (data.unplayableItems || []).map((i: any) => i.id);
       setUnplayableVideoIds(deadIds);
 
+      const sec = data.durationMs ? ` trong ${(data.durationMs / 1000).toFixed(1)}s` : "";
       if (deadIds.length > 0) {
         setBulkActionMsg({
           type: "success",
-          text: `Đã quét ${data.scannedCount} video: Phát hiện ${deadIds.length} video bị lỗi kết nối hoặc link chết!`,
+          text: `Đã quét ${data.scannedCount} video${sec}: Phát hiện ${deadIds.length} video bị lỗi kết nối hoặc link chết!`,
         });
       } else {
         setBulkActionMsg({
           type: "success",
-          text: `Đã quét ${data.scannedCount} video: Tất cả video đều có thể phát bình thường! Không có video lỗi.`,
+          text: `Đã quét ${data.scannedCount} video${sec}: Tất cả video đều có thể phát bình thường! Không có video lỗi.`,
         });
       }
     } catch (err: any) {
@@ -3214,7 +3240,7 @@ export default function AdminDashboardPage() {
                   onClick={handleScanUnplayableVideos}
                   disabled={isScanningUnplayable}
                   className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-200 font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-                  title="Quét kiểm tra trạng thái các link video trên máy chủ"
+                  title="Quét kiểm tra trạng thái 300 link video mới nhất trên máy chủ bằng 25 luồng song song"
                 >
                   {isScanningUnplayable ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
@@ -3226,10 +3252,25 @@ export default function AdminDashboardPage() {
 
                 <button
                   type="button"
+                  onClick={handleScanGallerySmallImages}
+                  disabled={isScanningGalleries}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-200 font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  title="Quét xem trước số lượng ảnh nhỏ (<400px) hoặc ảnh lỗi trong các Album mà không xóa dữ liệu"
+                >
+                  {isScanningGalleries ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5 text-blue-400" />
+                  )}
+                  <span>{isScanningGalleries ? "Đang quét Album..." : "Quét ảnh nhỏ Album"}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleCleanGallerySmallImages}
                   disabled={isCleaningGalleries}
                   className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-200 font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-                  title="Quét và tự động lọc bỏ các ảnh nhỏ (< 400px) hoặc ảnh lỗi bên trong các bài Album (Gallery)"
+                  title="Quét và tự động lọc bỏ các ảnh nhỏ (< 400px) hoặc ảnh lỗi bên trong các bài Album (Gallery) bằng 25 luồng song song"
                 >
                   {isCleaningGalleries ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-pink-400" />
