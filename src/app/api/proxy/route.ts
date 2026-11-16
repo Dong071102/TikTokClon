@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
               return trimmed.replace(/URI="([^"]+)"/g, (_, uri) => {
                 try {
                   const absolute = new URL(uri, url).toString();
-                  return `URI="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+                  return `URI="/api/proxy?url=${encodeURIComponent(absolute)}&_v=2"`;
                 } catch {
                   return `URI="${uri}"`;
                 }
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
           // Dòng chứa URL phân đoạn (.ts / .png) hoặc playlist con
           try {
             const absolute = new URL(trimmed, url).toString();
-            return `/api/proxy?url=${encodeURIComponent(absolute)}`;
+            return `/api/proxy?url=${encodeURIComponent(absolute)}&_v=2`;
           } catch {
             return line;
           }
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
           "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
           "Access-Control-Allow-Headers": "Range, Content-Range, Content-Type",
           "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
-          "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
           "Accept-Ranges": "bytes",
         },
       });

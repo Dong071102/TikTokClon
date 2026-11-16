@@ -115,22 +115,19 @@ function AdminVideoPreview({
     setIsPreviewing(true);
     const src = item.mediaUrl;
     const isHls = src.includes(".m3u8");
+    const effectiveHlsSrc =
+      isHls && !src.startsWith("/api/proxy") && src.startsWith("http")
+        ? `/api/proxy?url=${encodeURIComponent(src)}&_v=2`
+        : src;
 
     if (isHls) {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = src;
-        video.currentTime = 0;
-        video
-          .play()
-          .then(() => setIsPlaying(true))
-          .catch(() => {});
-      } else if (Hls.isSupported()) {
+      if (Hls.isSupported()) {
         if (hlsRef.current) {
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
         const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
-        hls.loadSource(src);
+        hls.loadSource(effectiveHlsSrc);
         hls.attachMedia(video);
         hlsRef.current = hls;
 
@@ -144,13 +141,16 @@ function AdminVideoPreview({
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            const proxyUrl = `/api/proxy?url=${encodeURIComponent(src)}`;
-            if (hls.url !== proxyUrl) {
-              hls.loadSource(proxyUrl);
-              hls.startLoad();
-            }
+            hls.startLoad();
           }
         });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = effectiveHlsSrc;
+        video.currentTime = 0;
+        video
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => {});
       }
     } else {
       if (!video.src || video.src === "") {

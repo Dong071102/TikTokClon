@@ -136,40 +136,35 @@ export default function VideoPlayer({
     }
 
     const isHls = src.includes(".m3u8");
+    const effectiveHlsSrc =
+      isHls && !src.startsWith("/api/proxy") && src.startsWith("http")
+        ? `/api/proxy?url=${encodeURIComponent(src)}&_v=2`
+        : src;
 
     if (isHls) {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Native Safari HLS
-        video.src = src;
-      } else if (Hls.isSupported()) {
+      if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
         });
-        hls.loadSource(src);
+        hls.loadSource(effectiveHlsSrc);
         hls.attachMedia(video);
         hlsRef.current = hls;
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (isActive) {
             video.muted = isMuted;
-            video.play().catch(() => {});
+            video
+              .play()
+              .then(() => setIsPlaying(true))
+              .catch(() => {});
           }
         });
-
-        let isProxyTried = false;
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              if (!isProxyTried) {
-                isProxyTried = true;
-                const proxyUrl = `/api/proxy?url=${encodeURIComponent(src)}`;
-                hls.loadSource(proxyUrl);
-                hls.startLoad();
-              } else {
-                hls.destroy();
-              }
+              hls.startLoad();
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
               hls.recoverMediaError();
             } else {
@@ -177,6 +172,9 @@ export default function VideoPlayer({
             }
           }
         });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Native Safari (iOS)
+        video.src = effectiveHlsSrc;
       }
     } else {
       video.src = src;
