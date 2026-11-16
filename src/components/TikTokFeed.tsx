@@ -29,6 +29,7 @@ export type MediaFormat = "VIDEO" | "GALLERY" | "IMAGE";
 
 interface MediaItem {
   id: string;
+  originalId?: string; // ID bài viết gốc nếu là ảnh được tách từ Gallery
   type: "IMAGE" | "VIDEO";
   mediaUrl: string;
   galleryUrls?: string[];
@@ -42,6 +43,80 @@ interface MediaItem {
   tags: string[];
   createdAt?: string;
   feedKey?: string; // Khóa duy nhất cho infinite loop
+  isFromGallery?: boolean; // Đánh dấu ảnh đơn được bung từ Album / Gallery
+  galleryIndex?: number; // Số thứ tự ảnh trong Album gốc
+  galleryTotal?: number; // Tổng số ảnh của Album gốc
+}
+
+/**
+ * Xử lý tách các Album (Gallery) nhiều ảnh thành từng slide ảnh đơn độc lập
+ * và trộn xen kẽ vào luồng cuộn dọc của TikTok Feed, tránh sự nhàm chán khi 1 bài có quá nhiều hình.
+ */
+function processFeedItems(
+  rawItems: MediaItem[],
+  mixGallery: boolean,
+  sort: "random" | "newest" | "oldest"
+): MediaItem[] {
+  if (!mixGallery) return rawItems;
+
+  const result: MediaItem[] = [];
+  const galleryPhotos: MediaItem[] = [];
+
+  for (const item of rawItems) {
+    if (item.type === "IMAGE" && item.galleryUrls && item.galleryUrls.length > 1) {
+      // Tách từng ảnh trong galleryUrls thành các item ảnh đơn độc lập
+      item.galleryUrls.forEach((url, gIdx) => {
+        galleryPhotos.push({
+          ...item,
+          id: `${item.id}-g-${gIdx}`,
+          originalId: item.id,
+          type: "IMAGE",
+          mediaUrl: url,
+          thumbnailUrl: url,
+          isFromGallery: true,
+          galleryIndex: gIdx + 1,
+          galleryTotal: item.galleryUrls!.length,
+        });
+      });
+    } else {
+      result.push(item);
+    }
+  }
+
+  // Nếu không có ảnh gallery nào cần tách
+  if (galleryPhotos.length === 0) {
+    return result;
+  }
+
+  // Nếu toàn bộ rawItems là gallery
+  if (result.length === 0) {
+    return sort === "random"
+      ? [...galleryPhotos].sort(() => Math.random() - 0.5)
+      : galleryPhotos;
+  }
+
+  // Trộn (interleave / shuffle) các ảnh gallery xen kẽ với các bài viết khác
+  if (sort === "random") {
+    return [...result, ...galleryPhotos].sort(() => Math.random() - 0.5);
+  }
+
+  // Nếu chế độ Mới nhất hoặc Cũ nhất: Trộn xen kẽ (interleave) hài hoà
+  const mixed: MediaItem[] = [];
+  let gPtr = 0;
+  const ratio = Math.max(1, Math.floor(galleryPhotos.length / result.length));
+
+  for (let i = 0; i < result.length; i++) {
+    mixed.push(result[i]);
+    for (let k = 0; k < ratio && gPtr < galleryPhotos.length; k++) {
+      mixed.push(galleryPhotos[gPtr++]);
+    }
+  }
+
+  while (gPtr < galleryPhotos.length) {
+    mixed.push(galleryPhotos[gPtr++]);
+  }
+
+  return mixed;
 }
 
 interface TagItem {
@@ -73,25 +148,50 @@ export default function TikTokFeed() {
   // Bộ lọc Định dạng nội dung (Video / Album / Ảnh đơn)
   const [selectedFormats, setSelectedFormats] = useState<MediaFormat[]>(["VIDEO", "GALLERY", "IMAGE"]);
 
+  // Chế độ Trộn ảnh từ Album (Gallery) thành từng slide ảnh đơn cuộn dọc
+  const [mixGallery, setMixGallery] = useState(true);
+  const [viewingGallery, setViewingGallery] = useState<{
+    images: string[];
+    initialIndex: number;
+    title?: string;
+  } | null>(null);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Đọc danh sách Yêu thích từ LocalStorage
+  // Đọc danh sách Yêu thích & Cài đặt Trộn Gallery từ LocalStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem("tiktok_clone_favorites");
       if (stored) {
         setFavorites(JSON.parse(stored));
       }
+      const storedMix = localStorage.getItem("tiktok_clone_mix_gallery");
+      if (storedMix !== null) {
+        setMixGallery(storedMix === "true");
+      }
     } catch (e) {
       console.error(e);
     }
   }, []);
 
-  // Chuyển đổi Yêu thích (Favorite)
-  const toggleFavorite = (id: string) => {
+  const toggleMixGallery = () => {
+    setMixGallery((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("tiktok_clone_mix_gallery", String(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+  };
+
+  // Chuyển đổi Yêu thích (Favorite) - Hỗ trợ cả ID bài viết gốc của Album
+  const toggleFavorite = (id: string, originalId?: string) => {
+    const targetId = originalId || id;
     setFavorites((prev) => {
-      const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
+      const next = prev.includes(targetId) ? prev.filter((item) => item !== targetId) : [...prev, targetId];
       try {
         localStorage.setItem("tiktok_clone_favorites", JSON.stringify(next));
       } catch (e) {
@@ -102,8 +202,8 @@ export default function TikTokFeed() {
 
     // Nếu người dùng đang lọc riêng "Mục yêu thích" và bỏ tim bài viết này, loại bỏ bài khỏi danh sách xem
     if (showFavoritesOnly) {
-      setItems((prev) => prev.filter((item) => item.id !== id));
-      setBasePool((prev) => prev.filter((item) => item.id !== id));
+      setItems((prev) => prev.filter((item) => item.id !== id && item.originalId !== targetId));
+      setBasePool((prev) => prev.filter((item) => item.id !== targetId));
     }
   };
 
@@ -152,18 +252,22 @@ export default function TikTokFeed() {
         if (cursor && cursor !== "random-infinite") params.set("cursor", cursor);
         if (targetId && !append) params.set("id", targetId);
 
+        params.set("mixGallery", mixGallery ? "true" : "false");
+
         const res = await fetch(`/api/feed?${params.toString()}`);
         if (!res.ok) throw new Error("Lỗi tải dữ liệu feed");
         const data = await res.json();
 
-        const newItemsWithKeys = attachFeedKeys(data.items || []);
+        const rawItems: MediaItem[] = data.items || [];
+        const processed = processFeedItems(rawItems, mixGallery, sort);
+        const newItemsWithKeys = attachFeedKeys(processed);
 
         if (append) {
           setItems((prev) => [...prev, ...newItemsWithKeys]);
-          setBasePool((prev) => [...prev, ...(data.items || [])]);
+          setBasePool((prev) => [...prev, ...rawItems]);
         } else {
           setItems(newItemsWithKeys);
-          setBasePool(data.items || []);
+          setBasePool(rawItems);
           setActiveIndex(0);
           if (containerRef.current) {
             containerRef.current.scrollTop = 0;
@@ -176,7 +280,7 @@ export default function TikTokFeed() {
         setIsLoading(false);
       }
     },
-    []
+    [mixGallery]
   );
 
   // Tải danh sách tags
@@ -214,7 +318,7 @@ export default function TikTokFeed() {
     );
     loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTag, showFavoritesOnly, sortMode, startDate, endDate, selectedFormats, loadMedia]);
+  }, [activeTag, showFavoritesOnly, sortMode, startDate, endDate, selectedFormats, mixGallery, loadMedia]);
 
   // Cuộn vô tận không bao giờ hết (Endless Infinite Scroll / Loop):
   // Khi cuộn gần đến cuối danh sách (còn 2-3 bài), tự động nạp tiếp hoặc loop lại
@@ -243,10 +347,11 @@ export default function TikTokFeed() {
       const loopedItems = sortMode === "random"
         ? [...basePool].sort(() => Math.random() - 0.5)
         : [...basePool];
-      const withNewKeys = attachFeedKeys(loopedItems);
+      const processedLooped = processFeedItems(loopedItems, mixGallery, sortMode);
+      const withNewKeys = attachFeedKeys(processedLooped);
       setItems((prev) => [...prev, ...withNewKeys]);
     }
-  }, [isLoading, items.length, nextCursor, basePool, sortMode, activeTag, showFavoritesOnly, favorites, startDate, endDate, selectedFormats, loadMedia]);
+  }, [isLoading, items.length, nextCursor, basePool, sortMode, activeTag, showFavoritesOnly, favorites, startDate, endDate, selectedFormats, mixGallery, loadMedia]);
 
   // Intersection Observer theo dõi vị trí bài viết đang xem
   useEffect(() => {
@@ -440,6 +545,26 @@ export default function TikTokFeed() {
             </button>
           </div>
 
+          {/* Nút bật/tắt nhanh chế độ Trộn ảnh từ Album thành cuộn dọc */}
+          <button
+            type="button"
+            onClick={toggleMixGallery}
+            title={
+              mixGallery
+                ? "Đang BẬT: Album được rã thành từng ảnh đơn cuộn dọc để lướt thoải mái (Bấm để tắt)"
+                : "Đang TẮT: Album giữ nguyên dạng lướt ngang nhiều ảnh (Bấm để bật trộn)"
+            }
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full backdrop-blur-md text-[11px] sm:text-xs font-semibold transition border shadow-lg ${
+              mixGallery
+                ? "bg-amber-500/25 border-amber-500/70 text-amber-300 shadow-amber-500/20 font-bold"
+                : "bg-black/60 border-white/20 text-neutral-400 hover:text-white hover:bg-black/80"
+            }`}
+          >
+            <Shuffle className={`w-3 h-3 ${mixGallery ? "text-amber-400 animate-pulse" : "text-neutral-400"}`} />
+            <span className="hidden sm:inline">{mixGallery ? "Trộn Album: Bật" : "Trộn Album: Tắt"}</span>
+            <span className="sm:hidden">{mixGallery ? "Trộn: Bật" : "Trộn: Tắt"}</span>
+          </button>
+
           {activeTag && (
             <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
               <span>#{activeTag}</span>
@@ -604,27 +729,27 @@ export default function TikTokFeed() {
                     toggleMute={() => setIsMuted((prev) => !prev)}
                     defaultRotate={item.defaultRotate}
                     isLandscape={item.isLandscape}
-                    isFavorite={favorites.includes(item.id)}
-                    onToggleFavorite={() => toggleFavorite(item.id)}
+                    isFavorite={favorites.includes(item.originalId || item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id, item.originalId)}
                     initialDuration={item.duration}
                     width={item.width}
                     height={item.height}
                   />
-                ) : item.galleryUrls && item.galleryUrls.length > 1 ? (
+                ) : item.galleryUrls && item.galleryUrls.length > 1 && !item.isFromGallery ? (
                   <GalleryViewer
                     images={item.galleryUrls}
                     alt={item.title || "Gallery"}
                     isActive={idx === activeIndex}
-                    isFavorite={favorites.includes(item.id)}
-                    onToggleFavorite={() => toggleFavorite(item.id)}
+                    isFavorite={favorites.includes(item.originalId || item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id, item.originalId)}
                   />
                 ) : (
                   <ImageViewer
                     src={item.mediaUrl}
                     alt={item.title || "Image"}
                     isActive={idx === activeIndex}
-                    isFavorite={favorites.includes(item.id)}
-                    onToggleFavorite={() => toggleFavorite(item.id)}
+                    isFavorite={favorites.includes(item.originalId || item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id, item.originalId)}
                   />
                 )
               ) : (
@@ -652,6 +777,19 @@ export default function TikTokFeed() {
                     setActiveTag(tag);
                   }}
                   onOpenTagDrawer={() => setIsMenuOpen(true)}
+                  isFromGallery={item.isFromGallery}
+                  galleryIndex={item.galleryIndex}
+                  galleryTotal={item.galleryTotal}
+                  onOpenFullGallery={
+                    item.galleryUrls && item.galleryUrls.length > 1
+                      ? () =>
+                          setViewingGallery({
+                            images: item.galleryUrls || [],
+                            initialIndex: (item.galleryIndex || 1) - 1,
+                            title: item.title,
+                          })
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -769,6 +907,43 @@ export default function TikTokFeed() {
 
                 <div className="flex items-center justify-between text-[11px] text-neutral-400 mt-2 px-1">
                   <span>💡 Chạm 1 nút để lọc riêng, chạm thêm để gộp bộ lọc (VD: Video + Album)</span>
+                </div>
+
+                {/* Tùy chọn Trộn ảnh Album thành cuộn dọc */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-800/80 border border-neutral-700/80 mt-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-2 rounded-lg ${mixGallery ? "bg-amber-500/20 text-amber-400" : "bg-neutral-700/50 text-neutral-400"}`}>
+                      <Shuffle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                        <span>Trộn ảnh từ Album (Gallery)</span>
+                        {mixGallery && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                            Đang bật
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-neutral-400 leading-tight mt-0.5">
+                        Tách album nhiều ảnh thành các slide ảnh đơn cuộn dọc, tránh nhàm chán
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={mixGallery}
+                    onClick={toggleMixGallery}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      mixGallery ? "bg-amber-500" : "bg-neutral-700"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        mixGallery ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
                 </div>
               </div>
 
@@ -1050,6 +1225,35 @@ export default function TikTokFeed() {
                 <span>Áp dụng & Đóng</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xem toàn bộ Album / Gallery khi người dùng nhấp "Xem cả album" từ ảnh được trộn */}
+      {viewingGallery && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col animate-fade-in backdrop-blur-md">
+          <div className="p-3 sm:p-4 flex items-center justify-between border-b border-white/10 z-10 bg-black/50">
+            <div className="flex items-center gap-2 text-white font-semibold text-sm">
+              <Layers className="w-4 h-4 text-blue-400" />
+              <span className="line-clamp-1">{viewingGallery.title || "Toàn bộ Album"}</span>
+              <span className="text-xs text-neutral-400 font-normal">
+                ({viewingGallery.images.length} ảnh)
+              </span>
+            </div>
+            <button
+              onClick={() => setViewingGallery(null)}
+              className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition active:scale-95"
+              title="Đóng xem album"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 relative overflow-hidden">
+            <GalleryViewer
+              images={viewingGallery.images}
+              alt={viewingGallery.title || "Gallery"}
+              isActive={true}
+            />
           </div>
         </div>
       )}

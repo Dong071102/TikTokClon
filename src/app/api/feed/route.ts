@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
   const formatsParam = searchParams.get("formats") || searchParams.get("format") || searchParams.get("type");
+  const mixGalleryParam = searchParams.get("mixGallery") === "true";
 
   const where: any = {};
 
@@ -39,7 +40,10 @@ export async function GET(request: Request) {
           where.galleryUrls = { isEmpty: false };
         } else if (fmt === "IMAGE") {
           where.type = "IMAGE";
-          where.galleryUrls = { isEmpty: true };
+          // Nếu bật trộn từ Gallery thì lấy tất cả ảnh (cả ảnh đơn và album để bung thành ảnh đơn)
+          if (!mixGalleryParam) {
+            where.galleryUrls = { isEmpty: true };
+          }
         }
       } else if (rawFormats.length === 2) {
         const hasVideo = rawFormats.includes("VIDEO");
@@ -56,11 +60,18 @@ export async function GET(request: Request) {
             { type: "IMAGE", galleryUrls: { isEmpty: false } },
           ];
         } else if (hasVideo && hasImage) {
-          // Gộp: Video và Ảnh đơn
-          where.OR = [
-            { type: "VIDEO" },
-            { type: "IMAGE", galleryUrls: { isEmpty: true } },
-          ];
+          // Gộp: Video và Ảnh đơn (nếu bật mixGallery thì cho phép cả ảnh từ Album)
+          if (mixGalleryParam) {
+            where.OR = [
+              { type: "VIDEO" },
+              { type: "IMAGE" },
+            ];
+          } else {
+            where.OR = [
+              { type: "VIDEO" },
+              { type: "IMAGE", galleryUrls: { isEmpty: true } },
+            ];
+          }
         }
       }
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Tag as TagIcon, ExternalLink } from "lucide-react";
+import { Tag as TagIcon, ExternalLink, Layers } from "lucide-react";
 
 interface TagOverlayProps {
   title?: string | null;
@@ -9,6 +9,10 @@ interface TagOverlayProps {
   activeTag: string | null;
   onSelectTag: (tag: string | null) => void;
   onOpenTagDrawer: () => void;
+  isFromGallery?: boolean;
+  galleryIndex?: number;
+  galleryTotal?: number;
+  onOpenFullGallery?: () => void;
 }
 
 // Hàm phân tích và chuyển đổi URL thành Hyperlink có thể nhấp trực tiếp
@@ -43,11 +47,34 @@ export default function TagOverlay({
   activeTag,
   onSelectTag,
   onOpenTagDrawer,
+  isFromGallery,
+  galleryIndex,
+  galleryTotal,
+  onOpenFullGallery,
 }: TagOverlayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <div className="absolute left-0 bottom-14 sm:bottom-16 right-16 p-3 sm:p-4 pb-1 sm:pb-1.5 pointer-events-none z-20 flex flex-col justify-end max-w-xl">
+      {/* Huy hiệu nếu ảnh thuộc Album / Gallery được trộn */}
+      {isFromGallery && (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-600/80 backdrop-blur-md text-white text-[11px] font-semibold mb-2 shadow border border-blue-400/30 w-fit pointer-events-auto">
+          <Layers className="w-3 h-3 text-blue-200" />
+          <span>Album • {galleryIndex && galleryTotal ? `Ảnh ${galleryIndex}/${galleryTotal}` : "Từ Album"}</span>
+          {onOpenFullGallery && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenFullGallery();
+              }}
+              className="ml-1 underline hover:text-blue-200 font-bold transition"
+            >
+              Xem cả album
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Tiêu đề & Hyperlinks nếu có */}
       {title && (
         <div className="text-white text-xs sm:text-sm font-medium mb-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] pointer-events-auto leading-relaxed">
