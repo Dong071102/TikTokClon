@@ -164,31 +164,67 @@ export async function POST(request: Request) {
         // Nếu là direct link: thử ping HEAD / GET range
         if (v.mediaUrl.startsWith("http")) {
           try {
+            let origin = "";
+            try {
+              origin = new URL(v.mediaUrl).origin;
+            } catch {}
+
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 4000);
 
+            const isM3u8 = v.mediaUrl.includes(".m3u8");
             const res = await fetch(v.mediaUrl, {
-              method: "HEAD",
+              method: isM3u8 ? "GET" : "HEAD",
               signal: controller.signal,
               headers: {
                 "User-Agent":
                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                ...(origin ? { Referer: origin + "/" } : {}),
+                ...(isM3u8 ? {} : { Range: "bytes=0-100" }),
               },
             });
             clearTimeout(timeout);
 
-            if (res.status >= 400 && res.status !== 403 && res.status !== 405) {
+            let finalStatus = res.status;
+            // Nếu HEAD trả về 403 hoặc 405 (nhiều CDN chặn HEAD), thử lại bằng GET với Range và Referer
+            if (!isM3u8 && (res.status === 403 || res.status === 405)) {
+              try {
+                const ctrl2 = new AbortController();
+                const to2 = setTimeout(() => ctrl2.abort(), 4000);
+                const res2 = await fetch(v.mediaUrl, {
+                  method: "GET",
+                  signal: ctrl2.signal,
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    Range: "bytes=0-100",
+                    ...(origin ? { Referer: origin + "/" } : {}),
+                  },
+                });
+                clearTimeout(to2);
+                finalStatus = res2.status;
+              } catch {}
+            }
+
+            if (finalStatus >= 400 && finalStatus !== 403) {
               unplayable.push({
                 id: v.id,
                 title: v.title,
                 mediaUrl: v.mediaUrl,
-                reason: `Server nguồn trả về mã lỗi HTTP ${res.status}`,
+                reason: `Server nguồn trả về mã lỗi HTTP ${finalStatus}`,
+              });
+            } else if (finalStatus === 403) {
+              unplayable.push({
+                id: v.id,
+                title: v.title,
+                mediaUrl: v.mediaUrl,
+                reason: "Server nguồn từ chối truy cập (HTTP 403 Forbidden)",
               });
             }
           } catch (err: any) {
             // Nếu fetch timeout hoặc network error hoàn toàn
             if (err.name === "AbortError") {
-              // Timeout - có thể do server chậm hoặc chặn HEAD, không vội đánh dấu hỏng
+              // Timeout - có thể do server chậm, không vội đánh dấu hỏng
             } else {
               unplayable.push({
                 id: v.id,

@@ -165,6 +165,7 @@ export default function AdminDashboardPage() {
   const [unplayableVideoIds, setUnplayableVideoIds] = useState<string[]>([]);
   const [isCleaningSmallImages, setIsCleaningSmallImages] = useState(false);
   const [isCleaningUnplayable, setIsCleaningUnplayable] = useState(false);
+  const [isScanningUnplayable, setIsScanningUnplayable] = useState(false);
 
   // Chọn & Thao tác hàng loạt (Bulk actions)
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -1004,6 +1005,40 @@ export default function AdminDashboardPage() {
       setBulkActionMsg({ type: "error", text: err.message || "Lỗi xóa ảnh nhỏ" });
     } finally {
       setIsCleaningSmallImages(false);
+    }
+  };
+
+  // Quét kiểm tra trạng thái HTTP của các video trên máy chủ
+  const handleScanUnplayableVideos = async () => {
+    setIsScanningUnplayable(true);
+    setBulkActionMsg(null);
+    try {
+      const res = await fetch("/api/admin/media/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SCAN_UNPLAYABLE_VIDEOS", limit: 200 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi quét video");
+
+      const deadIds = (data.unplayableItems || []).map((i: any) => i.id);
+      setUnplayableVideoIds(deadIds);
+
+      if (deadIds.length > 0) {
+        setBulkActionMsg({
+          type: "success",
+          text: `Đã quét ${data.scannedCount} video: Phát hiện ${deadIds.length} video bị lỗi kết nối hoặc link chết!`,
+        });
+      } else {
+        setBulkActionMsg({
+          type: "success",
+          text: `Đã quét ${data.scannedCount} video: Tất cả video đều có thể phát bình thường! Không có video lỗi.`,
+        });
+      }
+    } catch (err: any) {
+      setBulkActionMsg({ type: "error", text: err.message || "Lỗi khi quét video" });
+    } finally {
+      setIsScanningUnplayable(false);
     }
   };
 
@@ -2218,29 +2253,37 @@ export default function AdminDashboardPage() {
                                   className="w-full h-full object-cover select-none pointer-events-none"
                                   loading="lazy"
                                 />
-                              ) : null}
-                              <video
-                                src={item.url}
-                                muted
-                                preload="metadata"
-                                className={`w-full h-full object-cover select-none pointer-events-none ${item.thumbnailUrl ? "hidden" : ""}`}
-                                onLoadedMetadata={(e) => {
-                                  const v = e.currentTarget;
-                                  const dur = v.duration;
-                                  const w = v.videoWidth;
-                                  const h = v.videoHeight;
-                                  updateMediaMeta(item.url, {
-                                    duration: dur && !isNaN(dur) ? dur : undefined,
-                                    width: w || undefined,
-                                    height: h || undefined,
-                                    playable: true,
-                                    error: false,
-                                  });
-                                }}
-                                onError={() => {
-                                  updateMediaMeta(item.url, { playable: false, error: true });
-                                }}
-                              />
+                              ) : (
+                                <video
+                                  src={item.url}
+                                  muted
+                                  playsInline
+                                  preload="none"
+                                  className="w-full h-full object-cover select-none pointer-events-none"
+                                  onLoadedMetadata={(e) => {
+                                    const v = e.currentTarget;
+                                    const dur = v.duration;
+                                    const w = v.videoWidth;
+                                    const h = v.videoHeight;
+                                    updateMediaMeta(item.url, {
+                                      duration: dur && !isNaN(dur) ? dur : undefined,
+                                      width: w || undefined,
+                                      height: h || undefined,
+                                      playable: true,
+                                      error: false,
+                                    });
+                                  }}
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!item.url.includes(".m3u8") && !target.src.includes("/api/proxy")) {
+                                      target.src = `/api/proxy?url=${encodeURIComponent(item.url)}`;
+                                      target.load();
+                                    } else if (!item.url.includes(".m3u8")) {
+                                      updateMediaMeta(item.url, { playable: false, error: true });
+                                    }
+                                  }}
+                                />
+                              )}
                               {/* Overlay Play Icon */}
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/30">
                                 <div className="p-2 rounded-full bg-black/60 text-white backdrop-blur-sm border border-white/20">
@@ -2865,6 +2908,21 @@ export default function AdminDashboardPage() {
                   )}
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleScanUnplayableVideos}
+                  disabled={isScanningUnplayable}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-neutral-200 font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  title="Quét kiểm tra trạng thái các link video trên máy chủ"
+                >
+                  {isScanningUnplayable ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                  <span>{isScanningUnplayable ? "Đang quét video..." : "Quét video lỗi"}</span>
+                </button>
+
                 {unplayableVideoIds.length > 0 && (
                   <button
                     type="button"
@@ -3000,20 +3058,33 @@ export default function AdminDashboardPage() {
                         </div>
 
                         {item.type === "VIDEO" ? (
-                          <video
-                            src={item.mediaUrl}
-                            className="w-full h-full object-contain"
-                            style={{ transform: `rotate(${item.defaultRotate}deg)` }}
-                            onError={(e) => {
-                              const target = e.currentTarget;
-                              if (!target.src.includes("/api/proxy")) {
-                                target.src = `/api/proxy?url=${encodeURIComponent(item.mediaUrl)}`;
-                                target.load();
-                              } else {
-                                setUnplayableVideoIds((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
-                              }
-                            }}
-                          />
+                          <div className="relative w-full h-full flex items-center justify-center bg-black">
+                            {item.thumbnailUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.thumbnailUrl}
+                                alt={item.title || "video poster"}
+                                referrerPolicy="no-referrer"
+                                loading="lazy"
+                                className="max-w-full max-h-full w-auto h-auto object-contain select-none pointer-events-none"
+                              />
+                            ) : (
+                              <video
+                                src={item.mediaUrl}
+                                preload="none"
+                                muted
+                                playsInline
+                                className="w-full h-full object-contain pointer-events-none"
+                                style={{ transform: `rotate(${item.defaultRotate}deg)` }}
+                              />
+                            )}
+                            {/* Overlay icon play video */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
+                              <div className="p-2 rounded-full bg-black/60 text-white backdrop-blur-xs border border-white/20 shadow">
+                                <Film className="w-4 h-4 text-amber-400" />
+                              </div>
+                            </div>
+                          </div>
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -3024,12 +3095,12 @@ export default function AdminDashboardPage() {
                           />
                         )}
 
-                        {/* Cảnh báo video không thể phát */}
+                        {/* Cảnh báo video không thể phát (chỉ khi có kết quả quét phát hiện link chết) */}
                         {isUnplayable && (
                           <div className="absolute inset-0 bg-red-950/80 backdrop-blur-xs flex flex-col items-center justify-center p-2 text-center pointer-events-none z-10 border-2 border-red-500/70">
                             <AlertCircle className="w-7 h-7 text-red-400 mb-1 animate-pulse" />
                             <span className="text-xs font-bold text-red-200">Không thể phát</span>
-                            <span className="text-[10px] text-red-300 opacity-80 mt-0.5">Link lỗi hoặc codec không hỗ trợ</span>
+                            <span className="text-[10px] text-red-300 opacity-80 mt-0.5">Link hỏng hoặc máy chủ từ chối</span>
                           </div>
                         )}
 

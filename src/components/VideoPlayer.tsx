@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, RotateCw, Maximize2, Minimize2, Heart, FastForward } from "lucide-react";
+import Hls from "hls.js";
 
 interface VideoPlayerProps {
   src: string;
@@ -40,6 +41,7 @@ export default function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
@@ -122,6 +124,68 @@ export default function VideoPlayer({
       setBufferedPercent(Math.min(100, (end / video.duration) * 100));
     }
   }, []);
+
+  // Xử lý nạp nguồn Video: Hỗ trợ HLS (.m3u8) qua hls.js hoặc Video chuẩn MP4/WebM
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const isHls = src.includes(".m3u8");
+
+    if (isHls) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Native Safari HLS
+        video.src = src;
+      } else if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+        });
+        hls.loadSource(src);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (isActive) {
+            video.muted = isMuted;
+            video.play().catch(() => {});
+          }
+        });
+
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              const proxyUrl = `/api/proxy?url=${encodeURIComponent(src)}`;
+              if (hls.url !== proxyUrl) {
+                hls.loadSource(proxyUrl);
+                hls.startLoad();
+              } else {
+                hls.destroy();
+              }
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              hls.recoverMediaError();
+            } else {
+              hls.destroy();
+            }
+          }
+        });
+      }
+    } else {
+      video.src = src;
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [src]);
 
   // Tự động phát khi slide active, dừng khi cuộn qua slide khác
   useEffect(() => {
@@ -490,7 +554,7 @@ export default function VideoPlayer({
           onPause={() => setIsPlaying(false)}
           onError={(e) => {
             const target = e.currentTarget;
-            if (!target.src.includes("/api/proxy")) {
+            if (!src.includes(".m3u8") && !target.src.includes("/api/proxy")) {
               target.src = `/api/proxy?url=${encodeURIComponent(src)}`;
               target.load();
               if (isActive) target.play().catch(() => {});
