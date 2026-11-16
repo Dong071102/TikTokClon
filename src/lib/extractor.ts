@@ -1,4 +1,5 @@
 import { scrapeSingleWebUrl } from "./webScraper";
+import { extractTubeMediaFromText } from "./tubeExtractor";
 
 export interface ExtractedMedia {
   sourceType: "X_TWITTER" | "TIKTOK" | "INSTAGRAM" | "YOUTUBE" | "DIRECT_LINK";
@@ -187,6 +188,23 @@ function extractDirectMedia(url: string): ExtractedMedia | null {
 export async function extractMediaFromUrl(rawUrl: string): Promise<ExtractedMedia | null> {
   const url = rawUrl.trim();
   if (!url) return null;
+
+  // 0. Kiểm tra nếu người dùng dán trực tiếp đoạn mã script/embed/JSON cấu hình flashvars
+  const tubeFromSnippet = extractTubeMediaFromText(url);
+  if (tubeFromSnippet) {
+    return {
+      sourceType: "DIRECT_LINK",
+      type: "VIDEO",
+      mediaUrl: tubeFromSnippet.videoUrl,
+      thumbnailUrl: tubeFromSnippet.thumbnailUrl,
+      title: tubeFromSnippet.title || "Video Stream",
+      allMedia: tubeFromSnippet.allStreams.map((s) => ({
+        type: "VIDEO" as const,
+        mediaUrl: s.videoUrl,
+        thumbnailUrl: tubeFromSnippet.thumbnailUrl,
+      })),
+    };
+  }
 
   // 1. Kiểm tra nếu là link Twitter / X
   if (/twitter\.com|x\.com/i.test(url)) {

@@ -304,6 +304,118 @@ function AdminVideoPreview({
   );
 }
 
+function ParsedVideoPlayer({
+  mediaUrl,
+  defaultRotate,
+  isLandscape,
+  setIsLandscape,
+  setLinkDuration,
+  setLinkWidth,
+  setLinkHeight,
+  setLinkPlayStatus,
+  setLinkPlayError,
+  setLinkUsedProxy,
+}: {
+  mediaUrl: string;
+  defaultRotate: number;
+  isLandscape: boolean;
+  setIsLandscape: (v: boolean) => void;
+  setLinkDuration: (v: number | null) => void;
+  setLinkWidth: (v: number | null) => void;
+  setLinkHeight: (v: number | null) => void;
+  setLinkPlayStatus: (v: "IDLE" | "CHECKING" | "PLAYABLE" | "PLAYABLE_PROXY" | "ERROR") => void;
+  setLinkPlayError: (v: string | null) => void;
+  setLinkUsedProxy: (v: boolean) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !mediaUrl) return;
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const isHls = mediaUrl.includes(".m3u8");
+    const proxyUrl = `/api/proxy?url=${encodeURIComponent(mediaUrl)}&_v=2`;
+
+    if (isHls) {
+      setLinkUsedProxy(true);
+      setLinkPlayStatus("CHECKING");
+      if (Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+        hls.loadSource(proxyUrl);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setLinkPlayStatus("PLAYABLE_PROXY");
+          setLinkPlayError(null);
+        });
+
+        hls.on(Hls.Events.ERROR, (_evt, data) => {
+          if (data.fatal) {
+            setLinkPlayStatus("ERROR");
+            setLinkPlayError(`Lỗi phát HLS: ${data.details}`);
+          }
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = proxyUrl;
+      }
+    } else {
+      video.src = mediaUrl;
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [mediaUrl, setLinkPlayError, setLinkPlayStatus, setLinkUsedProxy]);
+
+  return (
+    <video
+      ref={videoRef}
+      controls
+      playsInline
+      className="w-full h-full object-contain"
+      style={{ transform: `rotate(${defaultRotate}deg)` }}
+      onLoadedMetadata={(e) => {
+        const target = e.currentTarget;
+        const dur = target.duration;
+        const w = target.videoWidth;
+        const h = target.videoHeight;
+        setLinkDuration(dur && !isNaN(dur) ? dur : null);
+        setLinkWidth(w || null);
+        setLinkHeight(h || null);
+        if (w && h && w > h && !isLandscape) {
+          setIsLandscape(true);
+        }
+      }}
+      onCanPlay={() => {
+        setLinkPlayStatus(mediaUrl.includes(".m3u8") ? "PLAYABLE_PROXY" : "PLAYABLE");
+        setLinkPlayError(null);
+      }}
+      onError={(e) => {
+        const target = e.currentTarget;
+        if (!mediaUrl.includes(".m3u8") && !target.src.includes("/api/proxy")) {
+          setLinkUsedProxy(true);
+          setLinkPlayStatus("CHECKING");
+          target.src = `/api/proxy?url=${encodeURIComponent(mediaUrl)}`;
+          target.load();
+        } else {
+          setLinkPlayStatus("ERROR");
+          setLinkPlayError("Không thể phát video (Link hỏng hoặc codec không hỗ trợ)");
+        }
+      }}
+    />
+  );
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"link" | "web_images" | "upload" | "list">("link");
@@ -1759,8 +1871,8 @@ export default function AdminDashboardPage() {
 
               <div className="flex flex-col sm:flex-row gap-2.5">
                 <input
-                  type="url"
-                  placeholder="Dán link vào đây (ví dụ: https://x.com/username/status/...)"
+                  type="text"
+                  placeholder="Dán link hoặc mã script/embed (ví dụ: https://..., hoặc đoạn flashvars_...)"
                   value={inputUrl}
                   onChange={(e) => setInputUrl(e.target.value)}
                   className="flex-1 px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none focus:border-blue-500 transition"
@@ -1785,40 +1897,17 @@ export default function AdminDashboardPage() {
                   <div className="flex flex-col gap-4">
                     <div className="relative aspect-[9/16] max-h-[420px] bg-black rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center">
                       {parsedData.type === "VIDEO" ? (
-                        <video
-                          src={linkUsedProxy ? `/api/proxy?url=${encodeURIComponent(parsedData.mediaUrl)}` : parsedData.mediaUrl}
-                          controls
-                          playsInline
-                          className="w-full h-full object-contain"
-                          style={{ transform: `rotate(${defaultRotate}deg)` }}
-                          onLoadedMetadata={(e) => {
-                            const target = e.currentTarget;
-                            const dur = target.duration;
-                            const w = target.videoWidth;
-                            const h = target.videoHeight;
-                            setLinkDuration(dur && !isNaN(dur) ? dur : null);
-                            setLinkWidth(w || null);
-                            setLinkHeight(h || null);
-                            if (w && h && w > h && !isLandscape) {
-                              setIsLandscape(true);
-                            }
-                          }}
-                          onCanPlay={() => {
-                            setLinkPlayStatus(linkUsedProxy ? "PLAYABLE_PROXY" : "PLAYABLE");
-                            setLinkPlayError(null);
-                          }}
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            if (!linkUsedProxy && !target.src.includes("/api/proxy")) {
-                              setLinkUsedProxy(true);
-                              setLinkPlayStatus("CHECKING");
-                              target.src = `/api/proxy?url=${encodeURIComponent(parsedData.mediaUrl)}`;
-                              target.load();
-                            } else {
-                              setLinkPlayStatus("ERROR");
-                              setLinkPlayError("Không thể phát video (Link hỏng hoặc codec không hỗ trợ)");
-                            }
-                          }}
+                        <ParsedVideoPlayer
+                          mediaUrl={parsedData.mediaUrl}
+                          defaultRotate={defaultRotate}
+                          isLandscape={isLandscape}
+                          setIsLandscape={setIsLandscape}
+                          setLinkDuration={setLinkDuration}
+                          setLinkWidth={setLinkWidth}
+                          setLinkHeight={setLinkHeight}
+                          setLinkPlayStatus={setLinkPlayStatus}
+                          setLinkPlayError={setLinkPlayError}
+                          setLinkUsedProxy={setLinkUsedProxy}
                         />
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element

@@ -1,3 +1,5 @@
+import { extractTubeMediaFromText } from "./tubeExtractor";
+
 export interface ScrapedMediaItem {
   id: string;
   url: string;
@@ -272,6 +274,19 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
     const imageCandidates = new Set<string>();
     const videoCandidates = new Map<string, string | undefined>(); // videoUrl -> poster/thumbnailUrl
 
+    // 1.2 Trích xuất VIDEO chuyên sâu từ flashvars / mediaDefinitions (Pornhub, YouPorn, RedTube, v.v.)
+    const tubeMedia = extractTubeMediaFromText(rawHtml) || extractTubeMediaFromText(html);
+    if (tubeMedia) {
+      if (!title && tubeMedia.title) title = tubeMedia.title;
+      if (!defaultPoster && tubeMedia.thumbnailUrl) defaultPoster = tubeMedia.thumbnailUrl;
+      videoCandidates.set(tubeMedia.videoUrl, tubeMedia.thumbnailUrl || defaultPoster);
+      for (const st of tubeMedia.allStreams) {
+        if (!videoCandidates.has(st.videoUrl)) {
+          videoCandidates.set(st.videoUrl, tubeMedia.thumbnailUrl || defaultPoster);
+        }
+      }
+    }
+
     // 2. Trích xuất VIDEO: OpenGraph & Twitter Card video
     const ogVideoRegex =
       /<meta[^>]+(?:property|name)=["'](?:og:video|og:video:url|og:video:secure_url|twitter:player:stream)["'][^>]+content=["']([^"']+)["']/gi;
@@ -360,45 +375,47 @@ export async function scrapeSingleWebUrl(targetUrl: string): Promise<{
       }
     }
 
-    // Đào sâu vào từng iframe embed player để trích xuất file video thật (JWPlayer, HLS m3u8, mp4...)
-    for (const rawIframeUrl of Array.from(iframeUrls)) {
-      try {
-        let fullIframeUrl = rawIframeUrl;
-        if (fullIframeUrl.startsWith("//")) {
-          fullIframeUrl = `${parsedUrl.protocol}${fullIframeUrl}`;
-        } else if (fullIframeUrl.startsWith("/")) {
-          fullIframeUrl = `${parsedUrl.origin}${fullIframeUrl}`;
-        }
-
-        const iframeRes = await fetch(fullIframeUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            Referer: parsedUrl.href,
-          },
-          signal: AbortSignal.timeout(8000),
-        });
-
-        if (iframeRes.ok) {
-          const iframeHtml = await iframeRes.text();
-
-          // 1. Tìm video file trong JWPlayer setup: file: "https://...m3u8"
-          const jwFileRegex = /(?:file|source|src)\s*:\s*["']([^"']+\.(?:mp4|webm|m3u8)(?:\?[^"']*)?)["']/gi;
-          let jwMatch;
-          while ((jwMatch = jwFileRegex.exec(iframeHtml)) !== null) {
-            if (jwMatch[1]) videoCandidates.set(jwMatch[1].trim(), defaultPoster);
+    // Đào sâu vào từng iframe embed player nếu chưa tìm thấy video chính từ flashvars
+    if (!tubeMedia) {
+      for (const rawIframeUrl of Array.from(iframeUrls)) {
+        try {
+          let fullIframeUrl = rawIframeUrl;
+          if (fullIframeUrl.startsWith("//")) {
+            fullIframeUrl = `${parsedUrl.protocol}${fullIframeUrl}`;
+          } else if (fullIframeUrl.startsWith("/")) {
+            fullIframeUrl = `${parsedUrl.origin}${fullIframeUrl}`;
           }
 
-          // 2. Quét regex các link .m3u8 hoặc .mp4 nhúng trong mã script của iframe
-          const vidRegex =
-            /https?:\/\/[^\s"'<>\\]+?\.(?:mp4|webm|m4v|m3u8)(?:\?[^\s"'<>\\]*)?/gi;
-          let mMatch;
-          while ((mMatch = vidRegex.exec(iframeHtml)) !== null) {
-            if (mMatch[0]) videoCandidates.set(mMatch[0].trim(), defaultPoster);
+          const iframeRes = await fetch(fullIframeUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              Referer: parsedUrl.href,
+            },
+            signal: AbortSignal.timeout(8000),
+          });
+
+          if (iframeRes.ok) {
+            const iframeHtml = await iframeRes.text();
+
+            // 1. Tìm video file trong JWPlayer setup: file: "https://...m3u8"
+            const jwFileRegex = /(?:file|source|src)\s*:\s*["']([^"']+\.(?:mp4|webm|m3u8)(?:\?[^"']*)?)["']/gi;
+            let jwMatch;
+            while ((jwMatch = jwFileRegex.exec(iframeHtml)) !== null) {
+              if (jwMatch[1]) videoCandidates.set(jwMatch[1].trim(), defaultPoster);
+            }
+
+            // 2. Quét regex các link .m3u8 hoặc .mp4 nhúng trong mã script của iframe
+            const vidRegex =
+              /https?:\/\/[^\s"'<>\\]+?\.(?:mp4|webm|m4v|m3u8)(?:\?[^\s"'<>\\]*)?/gi;
+            let mMatch;
+            while ((mMatch = vidRegex.exec(iframeHtml)) !== null) {
+              if (mMatch[0]) videoCandidates.set(mMatch[0].trim(), defaultPoster);
+            }
           }
+        } catch (iframeErr) {
+          // Bỏ qua nếu iframe không truy cập được
         }
-      } catch (iframeErr) {
-        // Bỏ qua nếu iframe không truy cập được
       }
     }
 

@@ -28,14 +28,29 @@ export async function GET(request: NextRequest) {
       reqHeaders["Range"] = range;
     }
 
+    const refParam = request.nextUrl.searchParams.get("ref");
     try {
       const parsedUrl = new URL(url);
-      if (parsedUrl.hostname.includes("twimg.com") || parsedUrl.hostname.includes("twitter.com")) {
+      if (refParam) {
+        reqHeaders["Referer"] = refParam;
+        try {
+          reqHeaders["Origin"] = new URL(refParam).origin;
+        } catch {}
+      } else if (parsedUrl.hostname.includes("twimg.com") || parsedUrl.hostname.includes("twitter.com")) {
         reqHeaders["Referer"] = "https://x.com/";
+        reqHeaders["Origin"] = "https://x.com";
+      } else if (parsedUrl.hostname.includes("phncdn.com") || parsedUrl.hostname.includes("pornhub.com")) {
+        reqHeaders["Referer"] = "https://www.pornhub.com/";
+        reqHeaders["Origin"] = "https://www.pornhub.com";
+      } else if (parsedUrl.hostname.includes("rdtcdn.com") || parsedUrl.hostname.includes("redtube.com")) {
+        reqHeaders["Referer"] = "https://www.redtube.com/";
+        reqHeaders["Origin"] = "https://www.redtube.com";
+      } else if (parsedUrl.hostname.includes("ypncdn.com") || parsedUrl.hostname.includes("youporn.com")) {
+        reqHeaders["Referer"] = "https://www.youporn.com/";
+        reqHeaders["Origin"] = "https://www.youporn.com";
       } else {
         reqHeaders["Referer"] = parsedUrl.origin + "/";
       }
-      reqHeaders["Origin"] = parsedUrl.origin;
     } catch {
       // Ignore URL parsing errors
     }
@@ -61,6 +76,7 @@ export async function GET(request: NextRequest) {
     if (isM3u8) {
       const text = await response.text();
       const lines = text.split("\n");
+      const refQuery = refParam ? `&ref=${encodeURIComponent(refParam)}` : "";
       const rewritten = lines
         .map((line) => {
           const trimmed = line.trim();
@@ -73,7 +89,7 @@ export async function GET(request: NextRequest) {
               return trimmed.replace(/URI="([^"]+)"/g, (_, uri) => {
                 try {
                   const absolute = new URL(uri, url).toString();
-                  return `URI="/api/proxy?url=${encodeURIComponent(absolute)}&_v=2"`;
+                  return `URI="/api/proxy?url=${encodeURIComponent(absolute)}${refQuery}&_v=2"`;
                 } catch {
                   return `URI="${uri}"`;
                 }
@@ -85,7 +101,7 @@ export async function GET(request: NextRequest) {
           // Dòng chứa URL phân đoạn (.ts / .png) hoặc playlist con
           try {
             const absolute = new URL(trimmed, url).toString();
-            return `/api/proxy?url=${encodeURIComponent(absolute)}&_v=2`;
+            return `/api/proxy?url=${encodeURIComponent(absolute)}${refQuery}&_v=2`;
           } catch {
             return line;
           }
