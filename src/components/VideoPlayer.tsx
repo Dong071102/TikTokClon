@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Play, Pause, Volume2, VolumeX, RotateCw, Maximize2, Minimize2, Heart, FastForward, Zap } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, RotateCw, Maximize2, Minimize2, Heart, FastForward } from "lucide-react";
 
 interface VideoPlayerProps {
   src: string;
@@ -62,18 +62,17 @@ export default function VideoPlayer({
   const [isHovering, setIsHovering] = useState<boolean>(false);
   const wasPlayingBeforeScrub = useRef<boolean>(false);
 
-  // Trạng thái tốc độ phát 2X (Hold để tạm thời 2X, hoặc Click/Tap để bật/tắt 2X)
-  const [isHolding2x, setIsHolding2x] = useState<boolean>(false);
-  const [isLocked2x, setIsLocked2x] = useState<boolean>(false);
-  const [holdSide, setHoldSide] = useState<"left" | "right" | null>(null);
-  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const holdStartPosRef = useRef<{ x: number; y: number } | null>(null);
-  const isHoldTriggeredRef = useRef<boolean>(false);
+  // Trạng thái giữ màn hình để phát 2X (Chuẩn TikTok: Nhấn giữ để 2X, buông tay trở về 1X)
+  const [isSpeedingUp, setIsSpeedingUp] = useState<boolean>(false);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isHolding2xRef = useRef<boolean>(false);
+  const didJustHold2xRef = useRef<boolean>(false);
 
   // Cleanup timer khi unmount
   useEffect(() => {
     return () => {
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     };
   }, []);
 
@@ -132,12 +131,14 @@ export default function VideoPlayer({
       setIsPlaying(false);
       setIsScrubbing(false);
       setPendingSeekTime(null);
-      // Reset tốc độ phát khi chuyển bài
+      // Reset tốc độ phát khi cuộn sang video khác
       video.playbackRate = 1.0;
-      setIsHolding2x(false);
-      setIsLocked2x(false);
-      setHoldSide(null);
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      setIsSpeedingUp(false);
+      isHolding2xRef.current = false;
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
     }
   }, [isActive, isMuted]);
 
@@ -148,34 +149,22 @@ export default function VideoPlayer({
     }
   }, [isMuted]);
 
-  // Chuyển đổi trạng thái khoá 2X (Bấm để bật/tắt tốc độ 2X)
-  const toggle2xLocked = useCallback(() => {
-    setIsLocked2x((prev) => {
-      const next = !prev;
-      if (videoRef.current) {
-        videoRef.current.playbackRate = next ? 2.0 : 1.0;
-      }
-      try {
-        if (typeof navigator !== "undefined" && navigator.vibrate) {
-          navigator.vibrate(next ? 25 : 15);
-        }
-      } catch {}
-      return next;
-    });
-  }, []);
+  // Xử lý cử chỉ chạm / nhấn giữ chuẩn TikTok
+  const handleContainerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Chỉ xử lý chuột trái (0) hoặc ngón tay chạm màn hình
+    if (e.button !== 0) return;
 
-  // Xử lý sự kiện chạm / bấm / giữ ở góc bên trái hoặc góc bên phải
-  const handleZonePointerDown = (side: "left" | "right", e: React.PointerEvent) => {
-    e.stopPropagation();
-    isHoldTriggeredRef.current = false;
-    holdStartPosRef.current = { x: e.clientX, y: e.clientY };
+    isHolding2xRef.current = false;
+    touchStartPosRef.current = { x: e.clientX, y: e.clientY };
 
-    // Sau 200ms nhấn giữ, kích hoạt chế độ tăng tốc 2X tạm thời (Hold to 2X)
-    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = setTimeout(() => {
-      isHoldTriggeredRef.current = true;
-      setIsHolding2x(true);
-      setHoldSide(side);
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+
+    // Sau 350ms giữ yên tay -> Kích hoạt 2X như TikTok!
+    longPressTimerRef.current = setTimeout(() => {
+      isHolding2xRef.current = true;
+      setIsSpeedingUp(true);
       if (videoRef.current) {
         videoRef.current.playbackRate = 2.0;
       }
@@ -184,57 +173,80 @@ export default function VideoPlayer({
           navigator.vibrate(20);
         }
       } catch {}
-    }, 200);
+    }, 350);
   };
 
-  const handleZonePointerMove = (e: React.PointerEvent) => {
-    // Nếu di chuyển quá 25px (đang vuốt để chuyển feed), huỷ đếm thời gian
-    if (holdStartPosRef.current) {
-      const dx = Math.abs(e.clientX - holdStartPosRef.current.x);
-      const dy = Math.abs(e.clientY - holdStartPosRef.current.y);
-      if (dx > 25 || dy > 25) {
-        if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-        if (isHolding2x) {
-          setIsHolding2x(false);
-          setHoldSide(null);
-          if (videoRef.current) {
-            videoRef.current.playbackRate = isLocked2x ? 2.0 : 1.0;
-          }
+  const handleContainerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!touchStartPosRef.current) return;
+
+    const dx = Math.abs(e.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(e.clientY - touchStartPosRef.current.y);
+
+    // Nếu ngón tay di chuyển > 10px (bắt đầu vuốt cuộn màn hình), huỷ ngay để cuộn mượt mà
+    if (dx > 10 || dy > 10) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
+      if (isHolding2xRef.current) {
+        isHolding2xRef.current = false;
+        setIsSpeedingUp(false);
+        if (videoRef.current) {
+          videoRef.current.playbackRate = 1.0;
         }
       }
     }
   };
 
-  const handleZonePointerUp = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-
-    if (isHoldTriggeredRef.current) {
-      // Đã kích hoạt giữ 2X -> nhấc tay ra thì trả về 1X (hoặc giữ 2X nếu đang khoá)
-      setIsHolding2x(false);
-      setHoldSide(null);
-      if (videoRef.current) {
-        videoRef.current.playbackRate = isLocked2x ? 2.0 : 1.0;
-      }
-    } else {
-      // Nhấc tay trước 200ms -> Đây là thao tác BẤM (Click / Tap) góc trái hoặc phải!
-      toggle2xLocked();
+  const handleContainerPointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
-    isHoldTriggeredRef.current = false;
-    holdStartPosRef.current = null;
+
+    if (isHolding2xRef.current) {
+      // Đang giữ 2X và nhấc tay ra -> Trở về tốc độ 1.0X ngay lập tức!
+      isHolding2xRef.current = false;
+      setIsSpeedingUp(false);
+      if (videoRef.current) {
+        videoRef.current.playbackRate = 1.0;
+      }
+      // Đánh dấu vừa kết thúc giữ 2X để ngăn sự kiện click sau đó tạm dừng video
+      didJustHold2xRef.current = true;
+      setTimeout(() => {
+        didJustHold2xRef.current = false;
+      }, 200);
+    }
+
+    touchStartPosRef.current = null;
   };
 
-  const handleZonePointerCancel = () => {
-    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-    if (isHoldTriggeredRef.current || isHolding2x) {
-      setIsHolding2x(false);
-      setHoldSide(null);
+  const handleContainerPointerCancel = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (isHolding2xRef.current) {
+      isHolding2xRef.current = false;
+      setIsSpeedingUp(false);
       if (videoRef.current) {
-        videoRef.current.playbackRate = isLocked2x ? 2.0 : 1.0;
+        videoRef.current.playbackRate = 1.0;
       }
     }
-    isHoldTriggeredRef.current = false;
-    holdStartPosRef.current = null;
+
+    touchStartPosRef.current = null;
+  };
+
+  const handleContainerClick = () => {
+    // Nếu vừa nhấc tay sau khi giữ 2X -> Bỏ qua click, không pause video
+    if (didJustHold2xRef.current) {
+      return;
+    }
+
+    // Chạm nhanh bình thường (Tap) -> Play / Pause
+    togglePlay();
   };
 
   const togglePlay = () => {
@@ -404,7 +416,11 @@ export default function VideoPlayer({
   return (
     <div
       ref={containerRef}
-      onClick={togglePlay}
+      onPointerDown={handleContainerPointerDown}
+      onPointerMove={handleContainerPointerMove}
+      onPointerUp={handleContainerPointerUp}
+      onPointerCancel={handleContainerPointerCancel}
+      onClick={handleContainerClick}
       className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none"
     >
       {/* Video Container với CSS Transform để xoay và tự động thu phóng theo chiều lớn nhất của screen */}
@@ -433,7 +449,7 @@ export default function VideoPlayer({
           playsInline
           loop
           preload="metadata"
-          className="w-full h-full object-contain pointer-events-auto select-none"
+          className="w-full h-full object-contain pointer-events-none select-none"
           onTimeUpdate={() => {
             if (!isScrubbing && videoRef.current) {
               setCurrentTime(videoRef.current.currentTime);
@@ -471,59 +487,15 @@ export default function VideoPlayer({
         />
       </div>
 
-      {/* VÙNG CHẠM / BẤM GÓC BÊN TRÁI ĐỂ X2 TỐC ĐỘ */}
-      <div
-        className="absolute left-0 top-20 bottom-24 w-1/4 sm:w-1/5 z-20 pointer-events-auto touch-none select-none flex items-center justify-start pl-3 sm:pl-4"
-        onPointerDown={(e) => handleZonePointerDown("left", e)}
-        onPointerMove={handleZonePointerMove}
-        onPointerUp={handleZonePointerUp}
-        onPointerCancel={handleZonePointerCancel}
-        title="Bấm hoặc giữ góc trái để phát tốc độ 2X"
-      >
-        {holdSide === "left" && isHolding2x && (
-          <div className="flex items-center gap-1 bg-black/75 px-3 py-1.5 rounded-full border border-amber-400/50 text-amber-300 text-xs font-bold shadow-xl animate-pulse pointer-events-none">
-            <FastForward className="w-3.5 h-3.5" />
-            <span>2X</span>
-          </div>
-        )}
-      </div>
-
-      {/* VÙNG CHẠM / BẤM GÓC BÊN PHẢI ĐỂ X2 TỐC ĐỘ */}
-      <div
-        className="absolute right-14 sm:right-16 top-20 bottom-24 w-1/4 sm:w-1/5 z-20 pointer-events-auto touch-none select-none flex items-center justify-end pr-2"
-        onPointerDown={(e) => handleZonePointerDown("right", e)}
-        onPointerMove={handleZonePointerMove}
-        onPointerUp={handleZonePointerUp}
-        onPointerCancel={handleZonePointerCancel}
-        title="Bấm hoặc giữ góc phải để phát tốc độ 2X"
-      >
-        {holdSide === "right" && isHolding2x && (
-          <div className="flex items-center gap-1 bg-black/75 px-3 py-1.5 rounded-full border border-amber-400/50 text-amber-300 text-xs font-bold shadow-xl animate-pulse pointer-events-none">
-            <FastForward className="w-3.5 h-3.5" />
-            <span>2X</span>
-          </div>
-        )}
-      </div>
-
-      {/* HUY HIỆU TỐC ĐỘ 2X Ở ĐẦU MÀN HÌNH (HIỆN KHI BẤM HOẶC GIỮ X2) */}
-      {(isHolding2x || isLocked2x) && (
-        <div className="absolute top-14 sm:top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/85 backdrop-blur-md border border-amber-400/50 text-white shadow-2xl animate-fade-in pointer-events-auto">
-          <Zap className="w-4 h-4 text-amber-400 fill-amber-400 animate-pulse" />
-          <span className="text-xs font-extrabold text-amber-300 tracking-wider">
-            {isHolding2x ? "Đang giữ: Tốc độ 2X ▶▶" : "Tốc độ 2X"}
+      {/* HUY HIỆU TỐC ĐỘ 2X (CHUẨN TIKTOK - CHỈ HIỆN KHI ĐANG NHẤN GIỮ MÀN HÌNH) */}
+      {isSpeedingUp && (
+        <div className="absolute top-14 sm:top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/85 backdrop-blur-md border border-white/20 text-white shadow-2xl animate-fade-in pointer-events-none select-none">
+          <FastForward className="w-4 h-4 text-amber-400 fill-amber-400 animate-pulse" />
+          <span className="text-xs font-bold text-white tracking-wider flex items-center gap-1.5">
+            <span>Tốc độ</span>
+            <span className="text-amber-400 font-extrabold text-sm">2X</span>
+            <span className="text-amber-400 text-xs">▶▶</span>
           </span>
-          {isLocked2x && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggle2xLocked();
-              }}
-              className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 hover:bg-white/30 text-[10px] font-semibold text-white transition active:scale-95"
-              title="Nhấn để trở về tốc độ 1X"
-            >
-              ✕ Về 1X
-            </button>
-          )}
         </div>
       )}
 
@@ -538,6 +510,7 @@ export default function VideoPlayer({
 
       {/* Nút hành động nhanh phía bên phải - thiết kế gọn gàng, bán trong suốt cả khi xem thường lẫn xoay màn hình */}
       <div
+        onPointerDown={(e) => e.stopPropagation()}
         className={`absolute z-30 flex flex-col transition-all duration-300 ${
           isRotated90
             ? "right-2 sm:right-3.5 bottom-12 sm:bottom-16 gap-2 sm:gap-2.5 opacity-65 hover:opacity-100 active:opacity-100 focus-within:opacity-100"
@@ -569,27 +542,6 @@ export default function VideoPlayer({
           className="p-2.5 sm:p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/80 active:scale-90 transition border border-white/20 shadow-lg"
         >
           <RotateCw className="w-6 h-6 sm:w-7 sm:h-7" />
-        </button>
-
-        {/* Nút chuyển đổi tốc độ phát (1X / 2X) */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle2xLocked();
-          }}
-          title={isLocked2x ? "Đang phát 2X - Bấm để về 1X" : "Bấm để phát tốc độ 2X (hoặc bấm/giữ góc trái/phải màn hình)"}
-          className={`p-2.5 sm:p-3 rounded-full backdrop-blur-md active:scale-90 transition border shadow-lg ${
-            isLocked2x || isHolding2x
-              ? "bg-amber-500/30 text-amber-300 border-amber-400 font-bold scale-105 shadow-amber-500/20"
-              : "bg-black/50 text-white hover:bg-black/80 border-white/20"
-          }`}
-        >
-          <div className="flex flex-col items-center justify-center w-6 h-6 sm:w-7 sm:h-7">
-            <FastForward className="w-4 h-4" />
-            <span className="text-[10px] font-extrabold leading-none -mt-0.5">
-              {isLocked2x || isHolding2x ? "2X" : "1X"}
-            </span>
-          </div>
         </button>
 
         {/* Nút chuyển đổi thu phóng lớn nhất (Fill) / vừa khung (Fit) khi đang xoay */}
