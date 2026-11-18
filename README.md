@@ -15,8 +15,8 @@
 
 ### Admin (Quản trị & Thêm Media)
 - **Tài khoản Admin mặc định:**
-  - Email / Username: `vubadong071102@gmail.com` hoặc `admin`
-  - Mật khẩu: `0711Vubadong02@`
+  - Email / Username: `` hoặc `
+  - Mật khẩu: ``
 - **Bóc tách Link tự động:** Dán link X (Twitter) hoặc TikTok $\rightarrow$ Hệ thống tự động bóc tách direct link và hiển thị preview.
 - **Tuỳ chọn lưu trữ linh hoạt:**
   - *Direct Link:* Lưu link gốc CDN, tiết kiệm dung lượng server.
@@ -56,9 +56,9 @@ npx prisma db push
    ```env
    DATABASE_URL=postgresql://tiktok:tiktok@192.168.68.5:5432/tiktok?schema=public
    JWT_SECRET=tiktok_clone_super_secret_jwt_key_2026_0711@
-   ADMIN_EMAIL=vubadong071102@gmail.com
-   ADMIN_USERNAME=admin
-   ADMIN_PASSWORD=0711Vubadong02@
+   ADMIN_EMAIL=
+   ADMIN_USERNAME=
+   ADMIN_PASSWORD=
    NEXT_PUBLIC_APP_URL=http://your-server-ip:3000
    APP_PORT=3000
    ```
