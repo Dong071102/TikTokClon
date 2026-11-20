@@ -48,6 +48,23 @@ export async function getCurrentAdmin(request?: Request): Promise<TokenPayload |
     }
   } catch {}
 
+  // 3. Hỗ trợ cho Bookmarklet chạy từ trình duyệt người dùng gọi về máy chủ local
+  if (request) {
+    const host = request.headers.get("host") || "";
+    if (host.includes("localhost:6789") || host.includes("127.0.0.1:6789")) {
+      try {
+        const defaultAdmin = await prisma.adminUser.findFirst();
+        if (defaultAdmin) {
+          return {
+            userId: defaultAdmin.id,
+            email: defaultAdmin.email,
+            username: defaultAdmin.username,
+          };
+        }
+      } catch {}
+    }
+  }
+
   return null;
 }
 

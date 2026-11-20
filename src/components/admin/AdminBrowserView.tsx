@@ -19,6 +19,8 @@ import {
   Plus,
   Play,
   Sparkles,
+  HelpCircle,
+  Copy,
 } from "lucide-react";
 import { QuickTagRadialButton } from "./QuickTagRadialButton";
 
@@ -69,8 +71,20 @@ export function AdminBrowserView() {
   >([]);
   const [isMediaDrawerOpen, setIsMediaDrawerOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const bookmarkletRef = useRef<HTMLAnchorElement>(null);
+
+  const BOOKMARKLET_CODE =
+    "javascript:(function(){var s=document.createElement('script');s.src='http://localhost:6789/bookmarklet.js?t='+Date.now();document.body.appendChild(s);})();";
+
+  // Gán href cho bookmarklet bằng DOM API trực tiếp để tránh React chặn javascript: URL
+  useEffect(() => {
+    if (bookmarkletRef.current) {
+      bookmarkletRef.current.setAttribute("href", BOOKMARKLET_CODE);
+    }
+  }, []);
 
   // 1. Tải danh sách tag từ cơ sở dữ liệu và cấu hình đã lưu
   useEffect(() => {
@@ -465,24 +479,29 @@ export function AdminBrowserView() {
             <strong>Lướt web thật (đã đăng nhập sẵn):</strong> Kéo nút này vào thanh Dấu trang ➔
           </span>
           <a
-            href="javascript:(function(){var s=document.createElement('script');s.src='http://localhost:6789/bookmarklet.js?t='+Date.now();document.body.appendChild(s);})();"
+            ref={bookmarkletRef}
             draggable="true"
-            title="Kéo thả nút này lên thanh Dấu trang (Bookmark Bar) hoặc nhấp để sao chép"
-            className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs cursor-grab active:cursor-grabbing shadow-sm flex items-center gap-1 transition"
+            title="Kéo thả nút này lên thanh Dấu trang (Bookmark Bar) của Firefox"
+            className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs cursor-grab active:cursor-grabbing shadow-sm flex items-center gap-1 transition select-none"
             onClick={(e) => {
               e.preventDefault();
-              navigator.clipboard.writeText(
-                "javascript:(function(){var s=document.createElement('script');s.src='http://localhost:6789/bookmarklet.js?t='+Date.now();document.body.appendChild(s);})();"
-              );
-              setStatusMessage("✓ Đã sao chép mã Bookmarklet! Dán vào thanh dấu trang của bạn.");
+              navigator.clipboard.writeText(BOOKMARKLET_CODE);
+              setStatusMessage("✓ Đã sao chép mã Bookmarklet! Bạn có thể dán vào dấu trang.");
               setTimeout(() => setStatusMessage(null), 4000);
             }}
           >
             <span>⚡ Lưu TikTokClone</span>
           </a>
         </div>
-        <div className="text-[11px] text-neutral-400 hidden sm:block">
-          (Bấm để sao chép / kéo lên Bookmark Bar)
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsHelpOpen(true)}
+            className="text-amber-400 hover:text-amber-200 underline underline-offset-2 flex items-center gap-1 text-[11px]"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span>Xem hướng dẫn cài đặt (10 giây)</span>
+          </button>
         </div>
       </div>
 
@@ -708,6 +727,87 @@ export function AdminBrowserView() {
                 className="px-5 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition active:scale-95 shadow-md"
               >
                 Lưu cấu hình
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 6. MODAL HƯỚNG DẪN CÀI ĐẶT BOOKMARKLET */}
+      {isHelpOpen && (
+        <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-950 border border-white/15 rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2 text-white font-bold">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+                <span>Cách cài nút "Lưu TikTokClone" lên trình duyệt</span>
+              </div>
+              <button
+                onClick={() => setIsHelpOpen(false)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs sm:text-sm text-neutral-300">
+              <div className="flex gap-3 items-start">
+                <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center shrink-0 text-xs">
+                  1
+                </span>
+                <div>
+                  <strong className="text-white block mb-0.5">Bật thanh Dấu trang (Bookmark Bar):</strong>
+                  <span>Nhấn phím <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-white font-mono text-xs">Ctrl + Shift + B</kbd> trên Firefox hoặc Chrome.</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-start">
+                <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center shrink-0 text-xs">
+                  2
+                </span>
+                <div>
+                  <strong className="text-white block mb-0.5">Tạo Dấu trang mới:</strong>
+                  <span>Nhấp chuột phải vào một khoảng trống trên thanh Dấu trang ➔ Chọn <strong>"Thêm dấu trang..." (Add Bookmark...)</strong>.</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-start">
+                <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center shrink-0 text-xs">
+                  3
+                </span>
+                <div className="w-full">
+                  <strong className="text-white block mb-1">Dán mã sau vào ô "Địa chỉ (URL)":</strong>
+                  <div className="bg-neutral-900 border border-white/15 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                    <code className="text-[11px] text-amber-300 font-mono truncate select-all">
+                      {BOOKMARKLET_CODE}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(BOOKMARKLET_CODE);
+                        setStatusMessage("✓ Đã sao chép mã Bookmarklet!");
+                        setTimeout(() => setStatusMessage(null), 3000);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold shrink-0 flex items-center gap-1 transition"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Sao chép</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs">
+                🎉 <strong>Cách dùng:</strong> Mỗi khi bạn đang mở bất kỳ trang web nào (X, Pornhub, Reddit...), bấm vào nút Bookmark đó trên thanh trình duyệt: Nút nổi <strong>⚡ Lưu TikTokClone</strong> sẽ hiện ra. Bạn chỉ cần <strong>dí nút & kéo vào tag</strong> để lưu video về server!
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(false)}
+                className="px-5 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition active:scale-95 shadow-md"
+              >
+                Đã hiểu
               </button>
             </div>
           </div>
