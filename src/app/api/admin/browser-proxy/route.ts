@@ -115,6 +115,30 @@ export async function GET(request: NextRequest) {
     window.history.replaceState(null, '', (u.pathname || '/') + (u.search || ''));
   } catch(e) {}
 
+  // Đón đầu và định tuyến lại tất cả các request fetch/ajax tương đối của trang web qua proxy
+  var _origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    try {
+      var fetchUrl = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+      if (fetchUrl && (fetchUrl.startsWith('/') || (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://')))) {
+        var abs = new URL(fetchUrl, REAL_ORIGIN).toString();
+        return _origFetch('/api/admin/browser-proxy?url=' + encodeURIComponent(abs), init);
+      }
+    } catch(e) {}
+    return _origFetch.apply(this, arguments);
+  };
+
+  var _origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+    try {
+      if (url && (url.startsWith('/') || (!url.startsWith('http://') && !url.startsWith('https://')))) {
+        var abs = new URL(url, REAL_ORIGIN).toString();
+        url = '/api/admin/browser-proxy?url=' + encodeURIComponent(abs);
+      }
+    } catch(e) {}
+    return _origOpen.apply(this, arguments);
+  };
+
   // Bắt tất cả liên kết <a> để giữ người dùng duyệt tiếp trong proxy
   document.addEventListener('click', function(e) {
     var target = e.target;
@@ -366,6 +390,19 @@ export async function POST(request: NextRequest) {
       cookieStoreByDomain[domain] = Array.from(cookieMap.entries())
         .map(([k, v]) => `${k}=${v}`)
         .join("; ");
+    }
+
+    // Nếu trả về JSON hoặc Text từ API (VD: các API nội bộ của web khi đăng nhập)
+    const respContentType = response.headers.get("content-type") || "";
+    if (respContentType.includes("application/json") || respContentType.includes("text/plain")) {
+      const respBuffer = await response.arrayBuffer();
+      return new Response(respBuffer, {
+        status: response.status,
+        headers: {
+          "Content-Type": respContentType,
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
     }
 
     // Nếu trả về redirect hoặc HTML, chuyển hướng người dùng tiếp tục trong proxy

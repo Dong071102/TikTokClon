@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "TikTokClone Quick Saver",
+  "version": "1.0",
+  "description": "Dí nút để xòe 5-10 tag và kéo ngón tay/chuột để lưu nhanh video, ảnh từ X (Twitter), Pornhub, Reddit về TikTokClone",
+  "permissions": ["activeTab"],
+  "host_permissions": ["<all_urls>", "http://localhost:6789/*"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
