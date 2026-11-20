@@ -18,6 +18,7 @@ import {
   X,
   Plus,
   Play,
+  Sparkles,
 } from "lucide-react";
 import { QuickTagRadialButton } from "./QuickTagRadialButton";
 
@@ -102,7 +103,15 @@ export function AdminBrowserView() {
       if (data.type === "BROWSER_NAVIGATE" && data.url) {
         navigateTo(data.url);
       } else if (data.type === "BROWSER_URL_CHANGED" && data.url) {
-        setInputUrl(data.url);
+        let clean = data.url;
+        if (clean.includes("/api/admin/browser-proxy?url=")) {
+          const match = clean.match(/url=([^&]+)/);
+          if (match && match[1]) {
+            clean = decodeURIComponent(match[1]);
+          }
+        }
+        setInputUrl(clean);
+        setCurrentUrl(clean);
         if (data.title) setPageTitle(data.title);
       } else if (data.type === "MEDIA_DETECTED" && Array.isArray(data.items)) {
         setDetectedMedia((prev) => {
@@ -126,6 +135,12 @@ export function AdminBrowserView() {
   const navigateTo = (rawUrl: string) => {
     let url = rawUrl.trim();
     if (!url) return;
+    if (url.includes("/api/admin/browser-proxy?url=")) {
+      const match = url.match(/url=([^&]+)/);
+      if (match && match[1]) {
+        url = decodeURIComponent(match[1]);
+      }
+    }
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       url = "https://" + url;
     }
@@ -441,6 +456,45 @@ export function AdminBrowserView() {
           </a>
         )}
       </div>
+
+      {/* DẢI TIỆN ÍCH BOOKMARKLET (Duyệt trên Firefox/Chrome thật) */}
+      <div className="shrink-0 bg-amber-500/10 border-b border-amber-500/20 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2 text-amber-300">
+          <Sparkles className="w-4 h-4 shrink-0 text-amber-400" />
+          <span>
+            <strong>Lướt web thật (đã đăng nhập sẵn):</strong> Kéo nút này vào thanh Dấu trang ➔
+          </span>
+          <a
+            href="javascript:(function(){var s=document.createElement('script');s.src='http://localhost:6789/bookmarklet.js?t='+Date.now();document.body.appendChild(s);})();"
+            draggable="true"
+            title="Kéo thả nút này lên thanh Dấu trang (Bookmark Bar) hoặc nhấp để sao chép"
+            className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs cursor-grab active:cursor-grabbing shadow-sm flex items-center gap-1 transition"
+            onClick={(e) => {
+              e.preventDefault();
+              navigator.clipboard.writeText(
+                "javascript:(function(){var s=document.createElement('script');s.src='http://localhost:6789/bookmarklet.js?t='+Date.now();document.body.appendChild(s);})();"
+              );
+              setStatusMessage("✓ Đã sao chép mã Bookmarklet! Dán vào thanh dấu trang của bạn.");
+              setTimeout(() => setStatusMessage(null), 4000);
+            }}
+          >
+            <span>⚡ Lưu TikTokClone</span>
+          </a>
+        </div>
+        <div className="text-[11px] text-neutral-400 hidden sm:block">
+          (Bấm để sao chép / kéo lên Bookmark Bar)
+        </div>
+      </div>
+
+      {/* LƯU Ý KHI ĐĂNG NHẬP X / TWITTER */}
+      {(currentUrl.includes("x.com") || currentUrl.includes("twitter.com")) && (
+        <div className="shrink-0 bg-blue-500/10 border-b border-blue-500/20 px-3 py-1.5 text-xs text-blue-300 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-blue-400" />
+          <span>
+            <strong>Đăng nhập X (Twitter):</strong> Vui lòng chọn <em>"Đăng nhập bằng tên người dùng hoặc email"</em> (tránh chọn <em>"Tiếp tục với Google"</em> vì Google cấm OAuth từ localhost). Hoặc dùng nút <strong>⚡ Lưu TikTokClone</strong> trên tab Firefox thật đã đăng nhập!
+          </span>
+        </div>
+      )}
 
       {/* Thông báo trạng thái Toast */}
       {statusMessage && (

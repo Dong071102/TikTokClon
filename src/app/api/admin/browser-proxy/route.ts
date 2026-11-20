@@ -105,25 +105,38 @@ export async function GET(request: NextRequest) {
       const injectedScript = `
 <script>
 (function() {
+  var REAL_URL = ${JSON.stringify(finalUrl)};
+  var REAL_ORIGIN = ${JSON.stringify(finalOrigin)};
+
   // Bắt tất cả liên kết <a> để giữ người dùng duyệt tiếp trong proxy
   document.addEventListener('click', function(e) {
     var target = e.target;
     while (target && target.tagName !== 'A') {
       target = target.parentElement;
     }
-    if (target && target.href && !target.href.startsWith('javascript:') && !target.href.startsWith('#')) {
-      e.preventDefault();
-      var absoluteUrl = target.href;
-      window.parent.postMessage({ type: 'BROWSER_NAVIGATE', url: absoluteUrl }, '*');
+    if (target) {
+      var hrefAttr = target.getAttribute('href');
+      if (hrefAttr && !hrefAttr.startsWith('javascript:') && !hrefAttr.startsWith('#')) {
+        e.preventDefault();
+        try {
+          var absoluteUrl = new URL(hrefAttr, REAL_URL).toString();
+          window.parent.postMessage({ type: 'BROWSER_NAVIGATE', url: absoluteUrl }, '*');
+        } catch(err) {
+          window.parent.postMessage({ type: 'BROWSER_NAVIGATE', url: hrefAttr }, '*');
+        }
+      }
     }
   }, true);
 
-  // Bắt form submit
+  // Bắt form submit và điều hướng qua proxy
   document.addEventListener('submit', function(e) {
     var form = e.target;
-    if (form && form.action) {
-      // Cho phép form tự gửi hoặc báo cho parent
-      window.parent.postMessage({ type: 'BROWSER_STATUS', message: 'Đang gửi form...' }, '*');
+    if (form) {
+      try {
+        var actionAttr = form.getAttribute('action') || '';
+        var actionUrl = new URL(actionAttr, REAL_URL).toString();
+        form.action = '/api/admin/browser-proxy?url=' + encodeURIComponent(actionUrl);
+      } catch(err) {}
     }
   }, true);
 
@@ -140,12 +153,15 @@ export async function GET(request: NextRequest) {
           if (source) src = source.src;
         }
         if (src) {
-          found.push({
-            type: 'VIDEO',
-            mediaUrl: src,
-            thumbnailUrl: v.poster || '',
-            title: document.title || 'Video từ ' + window.location.hostname
-          });
+          try {
+            var fullMediaUrl = new URL(src, REAL_URL).toString();
+            found.push({
+              type: 'VIDEO',
+              mediaUrl: fullMediaUrl,
+              thumbnailUrl: v.poster ? new URL(v.poster, REAL_URL).toString() : '',
+              title: document.title || 'Video'
+            });
+          } catch(e) {}
         }
       });
 
@@ -166,25 +182,26 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // 3. Ảnh chất lượng cao (width/height > 300)
+      // 3. Ảnh chất lượng cao (width/height > 350)
       var imgs = document.querySelectorAll('img');
       imgs.forEach(function(img) {
-        if (img.naturalWidth > 350 || img.naturalHeight > 350 || img.width > 350) {
-          if (img.src && !img.src.startsWith('data:')) {
+        if ((img.naturalWidth > 350 || img.naturalHeight > 350 || img.width > 350) && img.src && !img.src.startsWith('data:')) {
+          try {
+            var fullImgUrl = new URL(img.src, REAL_URL).toString();
             found.push({
               type: 'IMAGE',
-              mediaUrl: img.src,
-              thumbnailUrl: img.src,
+              mediaUrl: fullImgUrl,
+              thumbnailUrl: fullImgUrl,
               title: img.alt || document.title || 'Ảnh'
             });
-          }
+          } catch(e) {}
         }
       });
 
       if (found.length > 0) {
         window.parent.postMessage({
           type: 'MEDIA_DETECTED',
-          url: window.location.href,
+          url: REAL_URL,
           title: document.title,
           items: found
         }, '*');
@@ -208,10 +225,10 @@ export async function GET(request: NextRequest) {
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  // Báo URL hiện tại về cho parent update thanh Address bar
+  // Báo URL hiện tại (URL thật) về cho parent update thanh Address bar
   window.parent.postMessage({
     type: 'BROWSER_URL_CHANGED',
-    url: window.location.href,
+    url: REAL_URL,
     title: document.title
   }, '*');
 })();

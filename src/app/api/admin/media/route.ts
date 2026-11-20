@@ -4,8 +4,19 @@ import { prisma } from "@/lib/prisma";
 import { downloadMediaLocally } from "@/lib/downloader";
 import fs from "fs";
 
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token",
+    },
+  });
+}
+
 export async function GET(request: Request) {
-  const admin = await getCurrentAdmin();
+  const admin = await getCurrentAdmin(request);
   if (!admin) {
     return NextResponse.json({ error: "Chưa đăng nhập quyền Admin" }, { status: 401 });
   }
@@ -330,9 +341,15 @@ async function createMediaRecord(data: any) {
 }
 
 export async function POST(request: Request) {
-  const admin = await getCurrentAdmin();
+  const admin = await getCurrentAdmin(request);
   if (!admin) {
-    return NextResponse.json({ error: "Chưa đăng nhập quyền Admin" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Chưa đăng nhập quyền Admin" },
+      {
+        status: 401,
+        headers: { "Access-Control-Allow-Origin": "*" },
+      }
+    );
   }
 
   try {
@@ -345,18 +362,27 @@ export async function POST(request: Request) {
         const item = await createMediaRecord(itemData);
         createdItems.push(item);
       }
-      return NextResponse.json({
-        success: true,
-        count: createdItems.length,
-        items: createdItems,
-      });
+      return NextResponse.json(
+        {
+          success: true,
+          count: createdItems.length,
+          items: createdItems,
+        },
+        { headers: { "Access-Control-Allow-Origin": "*" } }
+      );
     }
 
     // Lưu 1 item đơn lẻ
     const createdItem = await createMediaRecord(body);
-    return NextResponse.json({ success: true, item: createdItem });
+    return NextResponse.json(
+      { success: true, item: createdItem },
+      { headers: { "Access-Control-Allow-Origin": "*" } }
+    );
   } catch (err: any) {
     console.error("[CREATE_MEDIA_ERROR]", err);
-    return NextResponse.json({ error: err.message || "Lỗi lưu media vào cơ sở dữ liệu" }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Lỗi lưu media vào cơ sở dữ liệu" },
+      { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
+    );
   }
 }

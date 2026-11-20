@@ -24,11 +24,31 @@ export function verifyToken(token: string): TokenPayload | null {
   }
 }
 
-export async function getCurrentAdmin(): Promise<TokenPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(TOKEN_COOKIE_NAME)?.value;
-  if (!token) return null;
-  return verifyToken(token);
+export async function getCurrentAdmin(request?: Request): Promise<TokenPayload | null> {
+  // 1. Hỗ trợ Authorization Bearer hoặc x-admin-token từ Bookmarklet hoặc API client
+  if (request) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const payload = verifyToken(authHeader.substring(7).trim());
+      if (payload) return payload;
+    }
+    const customToken = request.headers.get("x-admin-token");
+    if (customToken) {
+      const payload = verifyToken(customToken.trim());
+      if (payload) return payload;
+    }
+  }
+
+  // 2. Kiểm tra Cookie đăng nhập admin từ trình duyệt
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(TOKEN_COOKIE_NAME)?.value;
+    if (token) {
+      return verifyToken(token);
+    }
+  } catch {}
+
+  return null;
 }
 
 export async function ensureDefaultAdmin() {
