@@ -77,7 +77,7 @@ export function AdminBrowserView() {
   const bookmarkletRef = useRef<HTMLAnchorElement>(null);
 
   const BOOKMARKLET_CODE =
-    "javascript:(function(){var s=document.createElement('script');s.src='http://localhost:6789/bookmarklet.js?t='+Date.now();document.body.appendChild(s);})();";
+    "javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title||'');window.open('http://localhost:6789/admin/quick-add?url='+u+'&title='+t,'tk_quick_add','width=450,height=580,menubar=no,toolbar=no,location=no,status=no');})();";
 
   // Gán href cho bookmarklet bằng DOM API trực tiếp để tránh React chặn javascript: URL
   useEffect(() => {
