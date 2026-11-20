@@ -37,6 +37,7 @@ import {
   Clock,
 } from "lucide-react";
 import Link from "next/link";
+import { AdminBrowserView } from "@/components/admin/AdminBrowserView";
 import { formatDuration, getQualityTag, formatResolutionText, formatFileSize } from "@/lib/mediaUtils";
 
 function renderAdminTextWithLinks(text?: string | null) {
@@ -418,7 +419,7 @@ function ParsedVideoPlayer({
 
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"link" | "web_images" | "upload" | "list">("link");
+  const [activeTab, setActiveTab] = useState<"link" | "browser" | "web_images" | "upload" | "list">("link");
   const [user, setUser] = useState<{ email: string; username: string } | null>(null);
 
   // States cho Tab 1: Thêm từ Link
@@ -1888,6 +1889,18 @@ export default function AdminDashboardPage() {
         </button>
 
         <button
+          onClick={() => setActiveTab("browser")}
+          className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
+            activeTab === "browser"
+              ? "border-white text-white font-semibold"
+              : "border-transparent text-neutral-400 hover:text-white"
+          }`}
+        >
+          <Globe className="w-4 h-4" />
+          <span>Trình duyệt (Xem & Lưu nhanh)</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("web_images")}
           className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "web_images"
@@ -1925,7 +1938,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Main Tab Content - Cuộn dọc mượt mà trên mọi điện thoại */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 pb-32 sm:pb-16 overflow-y-auto overscroll-contain select-text">
+      <main className={`flex-1 ${activeTab === "browser" ? "max-w-7xl" : "max-w-5xl"} w-full mx-auto p-4 sm:p-6 pb-32 sm:pb-16 overflow-y-auto overscroll-contain select-text`}>
+        {/* TAB TRÌNH DUYỆT WEB */}
+        {activeTab === "browser" && (
+          <div className="w-full">
+            <AdminBrowserView />
+          </div>
+        )}
+
         {/* TAB 1: THÊM TỪ LINK */}
         {activeTab === "link" && (
           <div className="space-y-6">
