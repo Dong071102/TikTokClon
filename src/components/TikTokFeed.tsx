@@ -491,11 +491,11 @@ export default function TikTokFeed() {
         {/* Vùng hiển thị tag / bộ lọc đang kích hoạt */}
         <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto flex-wrap">
           {!isAllFormats && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xl text-white text-xs font-medium border border-white/15 shadow-lg">
               <span>Định dạng: {getFormatLabel()}</span>
               <button
                 onClick={handleSelectAllFormats}
-                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                className="hover:bg-white/20 rounded-full p-0.5 transition active:scale-90"
                 title="Bỏ lọc định dạng, xem tất cả"
               >
                 <X className="w-3.5 h-3.5" />
@@ -504,11 +504,11 @@ export default function TikTokFeed() {
           )}
 
           {activeTag && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-xs font-semibold border border-blue-400/40 shadow">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xl text-white text-xs font-medium border border-white/15 shadow-lg">
               <span>#{activeTag}</span>
               <button
                 onClick={() => setActiveTag(null)}
-                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                className="hover:bg-white/20 rounded-full p-0.5 transition active:scale-90"
                 title="Bỏ lọc tag này"
               >
                 <X className="w-3.5 h-3.5" />
@@ -517,12 +517,12 @@ export default function TikTokFeed() {
           )}
 
           {showFavoritesOnly && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-600/90 backdrop-blur-md text-white text-xs font-semibold border border-red-400/40 shadow">
-              <Heart className="w-3.5 h-3.5 fill-current" />
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 backdrop-blur-xl text-rose-300 text-xs font-semibold border border-rose-500/30 shadow-lg">
+              <Heart className="w-3.5 h-3.5 fill-current text-rose-400" />
               <span>Yêu thích ({favorites.length})</span>
               <button
                 onClick={() => setShowFavoritesOnly(false)}
-                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                className="hover:bg-white/20 rounded-full p-0.5 transition active:scale-90"
                 title="Bỏ xem yêu thích"
               >
                 <X className="w-3.5 h-3.5" />
@@ -531,8 +531,8 @@ export default function TikTokFeed() {
           )}
 
           {(startDate || endDate) && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-600/90 backdrop-blur-md text-white text-xs font-semibold border border-amber-400/40 shadow">
-              <Calendar className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xl text-white text-xs font-medium border border-white/15 shadow-lg">
+              <Calendar className="w-3.5 h-3.5 text-neutral-300" />
               <span>
                 {datePreset === "today"
                   ? "Hôm nay"
@@ -548,7 +548,7 @@ export default function TikTokFeed() {
                   setEndDate("");
                   setDatePreset("all");
                 }}
-                className="hover:bg-white/20 rounded-full p-0.5 transition"
+                className="hover:bg-white/20 rounded-full p-0.5 transition active:scale-90"
                 title="Bỏ lọc ngày"
               >
                 <X className="w-3.5 h-3.5" />
@@ -557,15 +557,15 @@ export default function TikTokFeed() {
           )}
 
           {sortMode !== "random" && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-800/90 backdrop-blur-md text-neutral-300 text-xs font-medium border border-neutral-700 shadow">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xl text-neutral-200 text-xs font-medium border border-white/15 shadow-lg">
               {sortMode === "newest" ? (
                 <>
-                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  <Sparkles className="w-3.5 h-3.5 text-sky-400" />
                   <span>Mới nhất</span>
                 </>
               ) : (
                 <>
-                  <Clock className="w-3.5 h-3.5 text-purple-400" />
+                  <Clock className="w-3.5 h-3.5 text-neutral-400" />
                   <span>Cũ nhất</span>
                 </>
               )}
@@ -577,17 +577,17 @@ export default function TikTokFeed() {
         <div className="flex items-center gap-2 pointer-events-auto ml-auto shrink-0">
           <button
             onClick={() => setIsMenuOpen(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full backdrop-blur-md text-xs font-semibold transition active:scale-95 border shadow-lg ${
+            className={`flex items-center gap-2 h-10 px-4 rounded-full backdrop-blur-xl text-xs font-semibold transition-all active:scale-95 border shadow-xl ${
               hasActiveFilter
-                ? "bg-neutral-900/90 border-blue-500/60 text-white hover:bg-neutral-800"
-                : "bg-black/60 hover:bg-black/80 border-white/20 text-white"
+                ? "bg-neutral-900/90 border-white/30 text-white hover:bg-neutral-800"
+                : "bg-black/45 hover:bg-black/75 border-white/15 text-white"
             }`}
             title="Mở menu bộ lọc và tuỳ chọn"
           >
             <Menu className="w-4 h-4" />
             <span>Menu</span>
             {hasActiveFilter && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)] ml-0.5" />
             )}
           </button>
         </div>
@@ -748,23 +748,23 @@ export default function TikTokFeed() {
           onClick={() => setIsMenuOpen(false)}
         >
           <div
-            className="w-full max-w-lg bg-neutral-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 shadow-2xl max-h-[85vh] flex flex-col space-y-5"
+            className="w-full max-w-lg bg-neutral-950/95 border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur-2xl max-h-[85vh] flex flex-col space-y-5"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header Menu */}
-            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-blue-600/20 text-blue-400">
+            <div className="flex items-center justify-between pb-3.5 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-white/10 text-white border border-white/10">
                   <SlidersHorizontal className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Menu & Bộ lọc</h3>
-                  <p className="text-[11px] text-neutral-400">Tuỳ chỉnh chế độ lướt, thời gian, chủ đề & quản trị</p>
+                  <h3 className="text-base font-bold text-white tracking-tight">Bộ lọc & Tuỳ chọn</h3>
+                  <p className="text-[11px] text-neutral-400">Tuỳ chỉnh định dạng, thứ tự và quản trị</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsMenuOpen(false)}
-                className="p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition"
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 text-neutral-400 hover:text-white transition active:scale-95"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -772,28 +772,28 @@ export default function TikTokFeed() {
 
             {/* Nội dung menu cuộn được */}
             <div className="flex-1 overflow-y-auto space-y-5 pr-1 no-scrollbar">
-              {/* 1. BỘ LỌC ĐỊNH DẠNG NỘI DUNG (VIDEO / ALBUM / ẢNH) */}
+              {/* 1. BỘ LỌC ĐỊNH DẠNG NỘI DUNG */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider">
-                    1. Định dạng nội dung
-                  </label>
-                  <span className="text-[10px] text-neutral-400">
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+                    Định dạng nội dung
+                  </span>
+                  <span className="text-[11px] text-neutral-400">
                     {selectedFormats.length === 3
-                      ? "Đang hiện tất cả"
-                      : `Đang lọc: ${getFormatLabel()}`}
+                      ? "Tất cả định dạng"
+                      : getFormatLabel()}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {/* Nút Tất cả */}
                   <button
                     type="button"
                     onClick={handleSelectAllFormats}
-                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       selectedFormats.length === 3
                         ? "bg-white text-black font-bold border-white shadow-md"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
                     <Sparkles className="w-4 h-4" />
@@ -804,10 +804,10 @@ export default function TikTokFeed() {
                   <button
                     type="button"
                     onClick={() => handleToggleFormat("VIDEO")}
-                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       selectedFormats.length < 3 && selectedFormats.includes("VIDEO")
-                        ? "bg-emerald-600/30 border-emerald-500 text-emerald-300 font-bold shadow-sm shadow-emerald-500/20"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
                     <Film className="w-4 h-4" />
@@ -818,10 +818,10 @@ export default function TikTokFeed() {
                   <button
                     type="button"
                     onClick={() => handleToggleFormat("GALLERY")}
-                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       selectedFormats.length < 3 && selectedFormats.includes("GALLERY")
-                        ? "bg-blue-600/30 border-blue-500 text-blue-300 font-bold shadow-sm shadow-blue-500/20"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
                     <Layers className="w-4 h-4" />
@@ -832,10 +832,10 @@ export default function TikTokFeed() {
                   <button
                     type="button"
                     onClick={() => handleToggleFormat("IMAGE")}
-                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       selectedFormats.length < 3 && selectedFormats.includes("IMAGE")
-                        ? "bg-amber-600/30 border-amber-500 text-amber-300 font-bold shadow-sm shadow-amber-500/20"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
                     <ImageIcon className="w-4 h-4" />
@@ -843,27 +843,23 @@ export default function TikTokFeed() {
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-neutral-400 mt-2 px-1">
-                  <span>💡 Chạm 1 nút để lọc riêng, chạm thêm để gộp bộ lọc (VD: Video + Album)</span>
-                </div>
-
                 {/* Tùy chọn Trộn ảnh Album thành cuộn dọc */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-800/80 border border-neutral-700/80 mt-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`p-2 rounded-lg ${mixGallery ? "bg-amber-500/20 text-amber-400" : "bg-neutral-700/50 text-neutral-400"}`}>
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900/80 border border-white/10 mt-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-white/10 text-white">
                       <Shuffle className="w-4 h-4" />
                     </div>
                     <div>
                       <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                        <span>Trộn ảnh từ Album (Gallery)</span>
+                        <span>Trộn ảnh từ Album</span>
                         {mixGallery && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                            Đang bật
+                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-white/20 text-white font-bold border border-white/20">
+                            Bật
                           </span>
                         )}
                       </div>
                       <div className="text-[11px] text-neutral-400 leading-tight mt-0.5">
-                        Tách album nhiều ảnh thành các slide ảnh đơn cuộn dọc, tránh nhàm chán
+                        Tách album thành từng slide cuộn dọc xen kẽ
                       </div>
                     </div>
                   </div>
@@ -873,12 +869,12 @@ export default function TikTokFeed() {
                     aria-checked={mixGallery}
                     onClick={toggleMixGallery}
                     className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      mixGallery ? "bg-amber-500" : "bg-neutral-700"
+                      mixGallery ? "bg-white" : "bg-neutral-800 border border-white/20"
                     }`}
                   >
                     <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                        mixGallery ? "translate-x-5" : "translate-x-0"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-md transition duration-200 ease-in-out ${
+                        mixGallery ? "translate-x-5 bg-black" : "translate-x-0 bg-neutral-400"
                       }`}
                     />
                   </button>
@@ -886,152 +882,119 @@ export default function TikTokFeed() {
               </div>
 
               {/* 2. CHẾ ĐỘ HIỂN THỊ / SẮP XẾP */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  2. Chế độ lướt video / ảnh
-                </label>
+              <div className="pt-3 border-t border-white/10">
+                <span className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2.5">
+                  Chế độ lướt
+                </span>
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setSortMode("random")}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       sortMode === "random"
-                        ? "bg-yellow-500/20 border-yellow-500 text-yellow-300 font-bold shadow-sm shadow-yellow-500/20"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
-                    <Shuffle className="w-4 h-4" />
+                    <Shuffle className="w-3.5 h-3.5" />
                     <span>Ngẫu nhiên</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSortMode("newest")}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       sortMode === "newest"
-                        ? "bg-blue-600/30 border-blue-500 text-blue-300 font-bold shadow-sm shadow-blue-500/20"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
-                    <Sparkles className="w-4 h-4" />
+                    <Sparkles className="w-3.5 h-3.5" />
                     <span>Mới nhất</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSortMode("oldest")}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 border transition ${
+                    className={`py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all active:scale-95 ${
                       sortMode === "oldest"
-                        ? "bg-purple-600/30 border-purple-500 text-purple-300 font-bold shadow-sm shadow-purple-500/20"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-md"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
-                    <Clock className="w-4 h-4" />
+                    <Clock className="w-3.5 h-3.5" />
                     <span>Cũ nhất</span>
                   </button>
                 </div>
               </div>
 
               {/* 3. BỘ LỌC THỜI GIAN */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  3. Lọc theo thời gian
-                </label>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDatePreset("all")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                      datePreset === "all"
-                        ? "bg-white text-black font-bold border-white"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                    }`}
-                  >
-                    Tất cả thời gian
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDatePreset("today")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                      datePreset === "today"
-                        ? "bg-white text-black font-bold border-white"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                    }`}
-                  >
-                    Hôm nay
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDatePreset("7days")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                      datePreset === "7days"
-                        ? "bg-white text-black font-bold border-white"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                    }`}
-                  >
-                    7 ngày qua
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDatePreset("30days")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${
-                      datePreset === "30days"
-                        ? "bg-white text-black font-bold border-white"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                    }`}
-                  >
-                    30 ngày qua
-                  </button>
+              <div className="pt-3 border-t border-white/10">
+                <span className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2.5">
+                  Thời gian
+                </span>
+                <div className="grid grid-cols-4 gap-1.5 mb-3">
+                  {(
+                    [
+                      { key: "all", label: "Tất cả" },
+                      { key: "today", label: "Hôm nay" },
+                      { key: "7days", label: "7 ngày" },
+                      { key: "30days", label: "30 ngày" },
+                    ] as const
+                  ).map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => handleSelectDatePreset(preset.key)}
+                      className={`py-2 px-1.5 rounded-xl text-xs font-medium border text-center transition-all active:scale-95 ${
+                        datePreset === preset.key
+                          ? "bg-white text-black font-bold border-white"
+                          : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Khoảng ngày tuỳ chọn */}
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[11px] text-neutral-400 font-semibold block">Hoặc chọn khoảng ngày tuỳ ý:</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] text-neutral-400 block mb-0.5">Từ ngày</label>
-                      <input
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => {
-                          setStartDate(e.target.value);
-                          setDatePreset("custom");
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-neutral-400 block mb-0.5">Đến ngày</label>
-                      <input
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => {
-                          setEndDate(e.target.value);
-                          setDatePreset("custom");
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-neutral-400 block mb-1">Từ ngày</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => {
+                        setStartDate(e.target.value);
+                        setDatePreset("custom");
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-neutral-900 border border-white/15 rounded-xl text-xs text-white focus:outline-none focus:border-white transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-neutral-400 block mb-1">Đến ngày</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => {
+                        setEndDate(e.target.value);
+                        setDatePreset("custom");
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-neutral-900 border border-white/15 rounded-xl text-xs text-white focus:outline-none focus:border-white transition"
+                    />
                   </div>
                 </div>
               </div>
 
               {/* 4. MỤC YÊU THÍCH & DANH SÁCH TAGS */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
-                    4. Chủ đề & Mục Yêu thích
-                  </label>
-                  <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
-                    <span>🔥</span> Top 5 tag phổ biến
+              <div className="pt-3 border-t border-white/10">
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+                    Chủ đề & Yêu thích
                   </span>
                 </div>
 
-                {/* Các nút lựa chọn chung */}
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex gap-2 mb-3">
                   <button
                     type="button"
                     onClick={() => {
@@ -1039,10 +1002,10 @@ export default function TikTokFeed() {
                       setShowFavoritesOnly(false);
                       setIsMenuOpen(false);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition-all border active:scale-95 ${
                       activeTag === null && !showFavoritesOnly
-                        ? "bg-white text-black font-bold border-white"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-white text-black font-bold border-white shadow-sm"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
                     Tất cả bài viết
@@ -1055,19 +1018,19 @@ export default function TikTokFeed() {
                       setActiveTag(null);
                       setIsMenuOpen(false);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border ${
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border active:scale-95 ${
                       showFavoritesOnly
-                        ? "bg-red-600 border-red-500 text-white font-bold shadow-md shadow-red-600/30"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                        ? "bg-rose-500 border-rose-400 text-white font-bold shadow-md shadow-rose-500/20"
+                        : "bg-neutral-900 border-white/10 text-neutral-300 hover:bg-neutral-800"
                     }`}
                   >
-                    <Heart className={`w-3.5 h-3.5 ${showFavoritesOnly ? "fill-white" : "text-red-400"}`} />
-                    <span>Mục yêu thích ({favorites.length})</span>
+                    <Heart className={`w-3.5 h-3.5 ${showFavoritesOnly ? "fill-white" : "text-rose-400"}`} />
+                    <span>Yêu thích ({favorites.length})</span>
                   </button>
                 </div>
 
-                {/* Danh sách Tags với Top 5 phân biệt màu sắc */}
-                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto no-scrollbar p-2 bg-neutral-950/70 rounded-xl border border-neutral-800">
+                {/* Danh sách Tags */}
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto no-scrollbar p-2.5 bg-neutral-900/60 rounded-2xl border border-white/10">
                   {allTags.length === 0 ? (
                     <div className="text-xs text-neutral-500 italic p-2">Chưa có tag nào được tạo.</div>
                   ) : (
@@ -1084,27 +1047,20 @@ export default function TikTokFeed() {
                             setShowFavoritesOnly(false);
                             setIsMenuOpen(false);
                           }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition active:scale-95 ${
+                          className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 border transition-all active:scale-95 ${
                             isSelected
-                              ? isTop5
-                                ? "bg-amber-500 border-amber-400 text-black font-bold shadow-md shadow-amber-500/20"
-                                : "bg-blue-600 border-blue-500 text-white font-bold shadow-md shadow-blue-600/20"
+                              ? "bg-white border-white text-black font-semibold shadow-sm"
                               : isTop5
-                              ? "bg-amber-500/10 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
-                              : "bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                              ? "bg-white/10 border-white/20 text-white hover:bg-white/15"
+                              : "bg-neutral-800/60 border-white/5 text-neutral-300 hover:bg-neutral-800 hover:text-white"
                           }`}
                         >
-                          {isTop5 && <span>🔥</span>}
                           <span>#{t.name}</span>
                           <span
                             className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                               isSelected
-                                ? isTop5
-                                  ? "bg-black/20 text-black"
-                                  : "bg-white/20 text-white"
-                                : isTop5
-                                ? "bg-amber-500/25 text-amber-200"
-                                : "bg-neutral-700 text-neutral-400"
+                                ? "bg-black/20 text-black font-bold"
+                                : "bg-white/10 text-neutral-400"
                             }`}
                           >
                             {t.count}
@@ -1117,25 +1073,22 @@ export default function TikTokFeed() {
               </div>
 
               {/* 5. TRANG QUẢN TRỊ ADMIN */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  5. Quản trị hệ thống
-                </label>
+              <div className="pt-3 border-t border-white/10">
                 <Link
                   href="/admin"
                   onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center justify-between p-3 rounded-xl bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700 hover:border-neutral-600 transition group"
+                  className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900/90 hover:bg-neutral-900 border border-white/10 hover:border-white/25 transition group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition">
+                    <div className="p-2 rounded-xl bg-white/10 text-white group-hover:bg-white group-hover:text-black transition">
                       <Lock className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-white group-hover:text-blue-300 transition">
+                      <div className="text-xs font-semibold text-white">
                         Trang Quản trị Admin
                       </div>
-                      <div className="text-[11px] text-neutral-400">
-                        Thêm link X/mạng xã hội, tải lên video/ảnh, sửa tag và quản lý bài
+                      <div className="text-[11px] text-neutral-400 mt-0.5">
+                        Bóc tách URL, quét media, sửa tag và dọn dẹp hệ thống
                       </div>
                     </div>
                   </div>
@@ -1145,20 +1098,20 @@ export default function TikTokFeed() {
             </div>
 
             {/* Footer Nút hành động */}
-            <div className="flex gap-2 pt-3 border-t border-neutral-800 shrink-0">
+            <div className="flex gap-2.5 pt-3.5 border-t border-white/10 shrink-0">
               <button
                 type="button"
                 onClick={handleResetAllFilters}
-                className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300 flex items-center justify-center gap-1.5 transition active:scale-95"
+                className="flex-1 py-3 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-xs font-semibold text-neutral-300 flex items-center justify-center gap-1.5 transition active:scale-95"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Đặt lại tất cả</span>
+                <span>Đặt lại</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white flex items-center justify-center transition shadow-lg shadow-blue-600/25 active:scale-95"
+                className="flex-1 py-3 rounded-2xl bg-white hover:bg-neutral-100 text-xs font-bold text-black flex items-center justify-center transition shadow-lg active:scale-95"
               >
                 <span>Áp dụng & Đóng</span>
               </button>

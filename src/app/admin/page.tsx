@@ -1843,14 +1843,14 @@ export default function AdminDashboardPage() {
   return (
     <div className="fixed inset-0 w-full h-[100dvh] bg-neutral-950 text-white flex flex-col overflow-hidden select-none">
       {/* Top Header */}
-      <header className="shrink-0 border-b border-neutral-800 bg-neutral-900/90 backdrop-blur-md z-30 px-4 py-3 flex items-center justify-between">
+      <header className="shrink-0 border-b border-white/10 bg-neutral-950/90 backdrop-blur-xl z-30 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400">
+          <div className="p-2 rounded-xl bg-white/10 text-white border border-white/10">
             <PlaySquare className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-bold text-base leading-tight">TikTok Media Admin</h1>
-            <p className="text-xs text-neutral-400">{user?.email || "Admin"}</p>
+            <h1 className="font-bold text-base leading-tight tracking-tight">TikTok Media Admin</h1>
+            <p className="text-xs text-neutral-400">{user?.email || "Admin Dashboard"}</p>
           </div>
         </div>
 
@@ -1858,15 +1858,15 @@ export default function AdminDashboardPage() {
           <Link
             href="/"
             target="_blank"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-white transition border border-neutral-700"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all active:scale-95 border border-white/10 shadow-sm"
           >
             <span>Xem Feed</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            <ExternalLink className="w-3.5 h-3.5 text-neutral-300" />
           </Link>
           <button
             onClick={handleLogout}
             title="Đăng xuất"
-            className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-red-400 transition"
+            className="p-2 rounded-full hover:bg-white/10 text-neutral-400 hover:text-rose-400 transition active:scale-95"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -1874,12 +1874,12 @@ export default function AdminDashboardPage() {
       </header>
 
       {/* Navigation Tabs (Cho phép cuộn ngang mượt mà trên điện thoại hẹp) */}
-      <div className="shrink-0 border-b border-neutral-800 bg-neutral-900 px-4 flex gap-6 text-sm font-medium overflow-x-auto no-scrollbar">
+      <div className="shrink-0 border-b border-white/10 bg-neutral-950 px-4 flex gap-6 text-sm font-medium overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("link")}
           className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "link"
-              ? "border-blue-500 text-blue-400 font-semibold"
+              ? "border-white text-white font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
           }`}
         >
@@ -1891,7 +1891,7 @@ export default function AdminDashboardPage() {
           onClick={() => setActiveTab("web_images")}
           className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "web_images"
-              ? "border-blue-500 text-blue-400 font-semibold"
+              ? "border-white text-white font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
           }`}
         >
@@ -1903,7 +1903,7 @@ export default function AdminDashboardPage() {
           onClick={() => setActiveTab("upload")}
           className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "upload"
-              ? "border-blue-500 text-blue-400 font-semibold"
+              ? "border-white text-white font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
           }`}
         >
@@ -1915,7 +1915,7 @@ export default function AdminDashboardPage() {
           onClick={() => setActiveTab("list")}
           className={`py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap shrink-0 ${
             activeTab === "list"
-              ? "border-blue-500 text-blue-400 font-semibold"
+              ? "border-white text-white font-semibold"
               : "border-transparent text-neutral-400 hover:text-white"
           }`}
         >
@@ -3267,7 +3267,7 @@ export default function AdminDashboardPage() {
             {/* Thanh lọc định dạng Media (Tất cả, Video, Album/Gallery, Ảnh đơn) */}
             <div className="bg-neutral-900 border border-neutral-800 p-3 sm:p-4 rounded-2xl space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 p-1 bg-neutral-950 rounded-xl border border-neutral-800 overflow-x-auto max-w-full">
+                <div className="flex items-center gap-1.5 p-1 bg-neutral-950 rounded-2xl border border-white/10 overflow-x-auto max-w-full">
                   <button
                     type="button"
                     onClick={() => {
@@ -3275,10 +3275,10 @@ export default function AdminDashboardPage() {
                       setMediaPage(1);
                       loadMediaList(1, searchTag, "ALL", mediaLimit);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap active:scale-95 ${
                       listFormatFilter === "ALL"
-                        ? "bg-blue-600 text-white shadow"
-                        : "text-neutral-400 hover:text-white"
+                        ? "bg-white text-black font-bold shadow-sm"
+                        : "text-neutral-400 hover:text-white hover:bg-white/5"
                     }`}
                   >
                     Tất cả ({formatCounts.all || mediaTotal})
@@ -3290,10 +3290,10 @@ export default function AdminDashboardPage() {
                       setMediaPage(1);
                       loadMediaList(1, searchTag, "VIDEO", mediaLimit);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                       listFormatFilter === "VIDEO"
-                        ? "bg-purple-600 text-white shadow"
-                        : "text-neutral-400 hover:text-white"
+                        ? "bg-white text-black font-bold shadow-sm"
+                        : "text-neutral-400 hover:text-white hover:bg-white/5"
                     }`}
                   >
                     <Film className="w-3.5 h-3.5" />
@@ -3306,14 +3306,14 @@ export default function AdminDashboardPage() {
                       setMediaPage(1);
                       loadMediaList(1, searchTag, "GALLERY", mediaLimit);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                       listFormatFilter === "GALLERY"
-                        ? "bg-pink-600 text-white shadow"
-                        : "text-neutral-400 hover:text-white"
+                        ? "bg-white text-black font-bold shadow-sm"
+                        : "text-neutral-400 hover:text-white hover:bg-white/5"
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>Gallery / Album ({formatCounts.gallery})</span>
+                    <span>Album ({formatCounts.gallery})</span>
                   </button>
                   <button
                     type="button"
@@ -3322,10 +3322,10 @@ export default function AdminDashboardPage() {
                       setMediaPage(1);
                       loadMediaList(1, searchTag, "IMAGE", mediaLimit);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                       listFormatFilter === "IMAGE"
-                        ? "bg-emerald-600 text-white shadow"
-                        : "text-neutral-400 hover:text-white"
+                        ? "bg-white text-black font-bold shadow-sm"
+                        : "text-neutral-400 hover:text-white hover:bg-white/5"
                     }`}
                   >
                     <ImageIcon className="w-3.5 h-3.5" />
@@ -3338,13 +3338,13 @@ export default function AdminDashboardPage() {
                       setMediaPage(1);
                       loadMediaList(1, searchTag, "SMALL_IMAGE", mediaLimit);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                       listFormatFilter === "SMALL_IMAGE"
-                        ? "bg-amber-600 text-white shadow"
-                        : "text-amber-400/80 hover:text-amber-300"
+                        ? "bg-white text-black font-bold shadow-sm"
+                        : "text-neutral-400 hover:text-white hover:bg-white/5"
                     }`}
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <Sparkles className="w-3.5 h-3.5" />
                     <span>Ảnh nhỏ &lt;400px ({formatCounts.smallImage || 0})</span>
                   </button>
                   {unplayableVideoIds.length > 0 && (
@@ -3353,13 +3353,13 @@ export default function AdminDashboardPage() {
                       onClick={() => {
                         setListFormatFilter("ERROR_VIDEO");
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                         listFormatFilter === "ERROR_VIDEO"
-                          ? "bg-red-600 text-white shadow"
-                          : "text-red-400 hover:text-red-300"
+                          ? "bg-rose-500 border border-rose-400 text-white font-bold shadow-sm"
+                          : "text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                       }`}
                     >
-                      <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                      <AlertCircle className="w-3.5 h-3.5" />
                       <span>Video lỗi phát ({unplayableVideoIds.length})</span>
                     </button>
                   )}

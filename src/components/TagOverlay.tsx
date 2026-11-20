@@ -55,19 +55,21 @@ export default function TagOverlay({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="absolute left-0 bottom-14 sm:bottom-16 right-16 p-3 sm:p-4 pb-1 sm:pb-1.5 pointer-events-none z-20 flex flex-col justify-end max-w-xl">
+    <div className="absolute left-0 bottom-0 right-14 sm:right-16 pt-20 pb-8 px-4 sm:px-5 pointer-events-none z-20 flex flex-col justify-end max-w-xl bg-gradient-to-t from-black/85 via-black/35 to-transparent">
       {/* Huy hiệu nếu ảnh thuộc Album / Gallery được trộn */}
       {isFromGallery && (
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-600/80 backdrop-blur-md text-white text-[11px] font-semibold mb-2 shadow border border-blue-400/30 w-fit pointer-events-auto">
-          <Layers className="w-3 h-3 text-blue-200" />
-          <span>Album • {galleryIndex && galleryTotal ? `Ảnh ${galleryIndex}/${galleryTotal}` : "Từ Album"}</span>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-white text-[11px] font-medium mb-2.5 shadow-sm border border-white/15 w-fit pointer-events-auto">
+          <Layers className="w-3.5 h-3.5 text-sky-400" />
+          <span className="font-semibold">Album</span>
+          <span className="text-white/60">•</span>
+          <span>{galleryIndex && galleryTotal ? `Ảnh ${galleryIndex}/${galleryTotal}` : "Từ Album"}</span>
           {onOpenFullGallery && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenFullGallery();
               }}
-              className="ml-1 underline hover:text-blue-200 font-bold transition"
+              className="ml-1 text-sky-400 hover:text-sky-300 font-semibold underline underline-offset-2 transition"
             >
               Xem cả album
             </button>
@@ -77,11 +79,11 @@ export default function TagOverlay({
 
       {/* Tiêu đề & Hyperlinks nếu có */}
       {title && (
-        <div className="text-white text-xs sm:text-sm font-medium mb-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] pointer-events-auto leading-relaxed">
+        <div className="text-white text-xs sm:text-sm font-medium mb-2.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] pointer-events-auto leading-relaxed">
           <div
             className={
               isExpanded
-                ? "whitespace-pre-line max-h-48 overflow-y-auto no-scrollbar bg-black/60 p-2.5 rounded-xl backdrop-blur-md border border-white/15"
+                ? "whitespace-pre-line max-h-56 overflow-y-auto no-scrollbar bg-black/75 p-3 rounded-2xl backdrop-blur-xl border border-white/15 shadow-xl"
                 : "line-clamp-2"
             }
           >
@@ -94,7 +96,7 @@ export default function TagOverlay({
                 e.stopPropagation();
                 setIsExpanded((prev) => !prev);
               }}
-              className="text-neutral-200 hover:text-white text-[11px] font-semibold mt-1 underline underline-offset-2 inline-block bg-black/50 px-2 py-0.5 rounded backdrop-blur-sm border border-white/10"
+              className="text-neutral-300 hover:text-white text-[11px] font-semibold mt-1.5 inline-flex items-center gap-1 bg-black/40 hover:bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-md border border-white/10 transition"
             >
               {isExpanded ? "Thu gọn ▲" : "Xem thêm ▼"}
             </button>
@@ -103,15 +105,15 @@ export default function TagOverlay({
       )}
 
       {/* Danh sách Tags */}
-      <div className="flex flex-wrap items-center gap-2 pointer-events-auto">
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pointer-events-auto">
         {tags.map((tag) => (
           <button
             key={tag}
             onClick={() => onSelectTag(tag === activeTag ? null : tag)}
-            className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md transition shadow ${
+            className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md transition-all active:scale-95 shadow-sm ${
               activeTag?.toLowerCase() === tag.toLowerCase()
-                ? "bg-white text-black font-bold scale-105"
-                : "bg-black/50 text-white hover:bg-black/70 border border-white/20"
+                ? "bg-white text-black font-bold shadow-md"
+                : "bg-black/40 text-neutral-200 hover:text-white hover:bg-black/60 border border-white/15"
             }`}
           >
             #{tag}
@@ -122,7 +124,7 @@ export default function TagOverlay({
         <button
           onClick={onOpenTagDrawer}
           title="Xem tất cả tag"
-          className="p-1.5 rounded-full bg-black/50 hover:bg-black/70 text-white/80 hover:text-white backdrop-blur-md border border-white/20 transition shadow"
+          className="p-1.5 rounded-full bg-black/40 hover:bg-black/60 text-neutral-300 hover:text-white backdrop-blur-md border border-white/15 transition active:scale-95 shadow-sm"
         >
           <TagIcon className="w-3.5 h-3.5" />
         </button>
