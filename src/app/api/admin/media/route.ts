@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { downloadMediaLocally } from "@/lib/downloader";
+import { extractMediaFromUrl } from "@/lib/extractor";
 import fs from "fs";
 
 export async function OPTIONS() {
@@ -253,15 +254,37 @@ async function createMediaRecord(data: any) {
     height = null,
   } = data;
 
-  const initialMediaUrl =
+  let finalMediaUrl =
     mediaUrl || (Array.isArray(galleryUrls) && galleryUrls.length > 0 ? galleryUrls[0] : null);
+  let finalGalleryUrls: string[] = Array.isArray(galleryUrls) ? [...galleryUrls] : [];
+  let finalType = type;
+  let finalThumbnailUrl = thumbnailUrl;
+  let finalTitle = title;
+  let finalIsLandscape = isLandscape;
 
-  if (!type || !initialMediaUrl) {
+  // Tự động phân tích bóc tách nếu mediaUrl rỗng hoặc là blob URL (phổ biến khi Twitter phát video)
+  if ((!finalMediaUrl || finalMediaUrl.startsWith("blob:")) && sourceUrl) {
+    try {
+      const extracted = await extractMediaFromUrl(sourceUrl);
+      if (extracted) {
+        finalMediaUrl = extracted.mediaUrl;
+        finalType = finalType || extracted.type;
+        finalThumbnailUrl = finalThumbnailUrl || extracted.thumbnailUrl;
+        finalTitle = finalTitle || extracted.title;
+        finalIsLandscape = finalIsLandscape || extracted.isLandscape;
+        if (extracted.allMedia && extracted.allMedia.length > 0) {
+          finalGalleryUrls = extracted.allMedia.map((m) => m.mediaUrl);
+        }
+      }
+    } catch (err) {
+      console.warn("[AUTO_EXTRACT_WARN]", err);
+    }
+  }
+
+  if (!finalType || !finalMediaUrl) {
     throw new Error("Thiếu thông tin mediaUrl hoặc galleryUrls hoặc type");
   }
 
-  let finalMediaUrl = initialMediaUrl;
-  let finalGalleryUrls: string[] = Array.isArray(galleryUrls) ? [...galleryUrls] : [];
   let localPath: string | null = null;
 
   // Nếu chọn phương án Tải về máy chủ cục bộ (LOCAL_STORAGE)
@@ -302,16 +325,16 @@ async function createMediaRecord(data: any) {
   return await prisma.$transaction(async (tx) => {
     const item = await tx.mediaItem.create({
       data: {
-        type,
+        type: finalType,
         sourceType: sourceType || "DIRECT_LINK",
         sourceUrl: sourceUrl || null,
         storageMode: storageMode === "LOCAL_STORAGE" ? "LOCAL_STORAGE" : "DIRECT_LINK",
         mediaUrl: finalMediaUrl,
         galleryUrls: finalGalleryUrls,
         localPath,
-        thumbnailUrl: thumbnailUrl || null,
-        title: title || null,
-        isLandscape: Boolean(isLandscape),
+        thumbnailUrl: finalThumbnailUrl || null,
+        title: finalTitle || null,
+        isLandscape: Boolean(finalIsLandscape),
         defaultRotate: Number(defaultRotate) || 0,
         duration: duration != null && !isNaN(Number(duration)) ? Number(duration) : null,
         width: width != null && !isNaN(Number(width)) ? Math.round(Number(width)) : null,

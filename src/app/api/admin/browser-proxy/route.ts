@@ -108,6 +108,13 @@ export async function GET(request: NextRequest) {
   var REAL_URL = ${JSON.stringify(finalUrl)};
   var REAL_ORIGIN = ${JSON.stringify(finalOrigin)};
 
+  // Đồng bộ pathname của iframe với trang web đích (đặc biệt quan trọng cho Twitter/X và các trang SPA)
+  // để React Router không bị hiểu nhầm là route 404 "/api/admin/browser-proxy"
+  try {
+    var u = new URL(REAL_URL);
+    window.history.replaceState(null, '', (u.pathname || '/') + (u.search || ''));
+  } catch(e) {}
+
   // Bắt tất cả liên kết <a> để giữ người dùng duyệt tiếp trong proxy
   document.addEventListener('click', function(e) {
     var target = e.target;

@@ -213,13 +213,13 @@
 
   function saveMedia(tag) {
     var items = scanCurrentMedia();
-    if (items.length === 0) {
+    var isTwitter = window.location.hostname.includes("x.com") || window.location.hostname.includes("twitter.com");
+    var target = items.find(function (m) { return m.type === "VIDEO"; }) || items[0];
+
+    if (!target && !isTwitter) {
       showToast("Không tìm thấy video hoặc ảnh lớn trên trang này", true);
       return;
     }
-
-    // Ưu tiên video trước
-    var target = items.find(function (m) { return m.type === "VIDEO"; }) || items[0];
 
     button.innerHTML = "<span>⏳ Đang lưu...</span>";
 
@@ -232,12 +232,12 @@
         "Authorization": token ? "Bearer " + token : "",
       },
       body: JSON.stringify({
-        type: target.type,
-        sourceType: "DIRECT_LINK",
+        type: target ? target.type : "VIDEO",
+        sourceType: isTwitter ? "X_TWITTER" : "DIRECT_LINK",
         sourceUrl: window.location.href,
-        mediaUrl: target.mediaUrl,
-        thumbnailUrl: target.thumbnailUrl || null,
-        title: target.title || document.title,
+        mediaUrl: target ? target.mediaUrl : "",
+        thumbnailUrl: target ? target.thumbnailUrl : null,
+        title: target ? target.title : document.title,
         storageMode: "DIRECT_LINK",
         tags: [tag],
       }),
